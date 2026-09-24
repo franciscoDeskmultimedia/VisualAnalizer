@@ -81,7 +81,7 @@ async function launchBrowser(): Promise<Browser> {
 
   if (isVercelOrLambda) {
     return puppeteer.launch({
-      args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
+      args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox', '--hide-scrollbars'],
       executablePath: await chromium.executablePath(),
       headless: true,
     });
@@ -92,7 +92,12 @@ async function launchBrowser(): Promise<Browser> {
     return puppeteer.launch({
       executablePath: localPath,
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--hide-scrollbars',
+      ],
     });
   }
 
@@ -146,6 +151,14 @@ export async function captureScreenshot(options: CaptureOptions): Promise<string
       waitUntil: 'networkidle2',
       timeout: 30000,
     });
+
+    // Suppress scrollbars to ensure exactly identical layout width across all captures
+    await page.addStyleTag({
+      content: `
+        ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+        html, body { scrollbar-width: none !important; -ms-overflow-style: none !important; }
+      `
+    }).catch(() => {});
 
     if (fullPage) {
       // Auto-scroll to trigger lazy loading of under-the-fold images and sections

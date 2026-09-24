@@ -550,7 +550,7 @@ export function ComparisonViewer({
               style={{ touchAction: 'pan-y' }}
             >
               {/* Sticky Top Labels that follow scroll */}
-              <div className="sticky top-2 z-30 flex justify-between px-3 pointer-events-none mb-[-36px]">
+              <div className="sticky top-2 z-30 flex justify-between px-3 pointer-events-none -mb-9">
                 <div className="bg-slate-950/90 backdrop-blur-md border border-slate-700/80 px-2.5 py-1 rounded-md text-[11px] font-mono text-emerald-400 font-bold shadow-lg">
                   ◀ BASELINE {isBaseline ? '(GOLDEN REFERENCE)' : '(ORIGINAL)'}
                 </div>
@@ -562,11 +562,15 @@ export function ComparisonViewer({
               </div>
 
               {/* Baseline Image (Full scrollable height) */}
-              <div className="relative">
+              <div className="w-full relative">
                 <img
                   src={baselineImageSrc}
                   alt="Baseline Reference"
-                  className="w-full h-auto block pointer-events-none"
+                  className="w-full h-auto block pointer-events-none select-none"
+                  style={{
+                    transform: 'translateZ(0)',
+                    backfaceVisibility: 'hidden',
+                  }}
                 />
               </div>
 
@@ -581,7 +585,11 @@ export function ComparisonViewer({
                   <img
                     src={currentComparison.currentImage}
                     alt="Current Run"
-                    className="w-full h-auto block"
+                    className="w-full h-auto block select-none"
+                    style={{
+                      transform: 'translateZ(0)',
+                      backfaceVisibility: 'hidden',
+                    }}
                   />
                 </div>
               )}
@@ -589,15 +597,15 @@ export function ComparisonViewer({
               {/* Divider Line & Sticky Floating Handle */}
               {hasBaseline && (
                 <div
-                  className="absolute top-0 bottom-0 w-1 bg-white shadow-[0_0_12px_rgba(255,255,255,0.9)] pointer-events-none z-20"
+                  className="absolute top-0 bottom-0 w-0.5 -translate-x-1/2 bg-white shadow-[0_0_12px_rgba(255,255,255,0.9)] pointer-events-none z-20"
                   style={{ left: `${sliderPosition}%` }}
                 >
                   <div
                     onMouseDown={handleMouseDown}
                     onTouchMove={handleTouchMove}
-                    className="sticky top-1/2 -translate-y-1/2 -translate-x-1/2 w-9 h-9 rounded-full bg-white shadow-2xl border-2 border-indigo-600 flex items-center justify-center text-indigo-700 pointer-events-auto cursor-ew-resize hover:scale-110 transition-transform active:scale-95"
+                    className="sticky top-1/2 -translate-y-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-white shadow-2xl border-2 border-indigo-600 flex items-center justify-center text-indigo-700 pointer-events-auto cursor-ew-resize hover:scale-110 transition-transform active:scale-95"
                   >
-                    <Split className="w-4 h-4" />
+                    <Split className="w-3.5 h-3.5" />
                   </div>
                 </div>
               )}
