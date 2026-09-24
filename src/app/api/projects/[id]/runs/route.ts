@@ -54,7 +54,8 @@ export async function POST(
     // Check if there is an active baseline run
     const baselineRun = project.baselineRunId ? getRunById(project.baselineRunId) : null;
 
-    const targetRunId = body.runId || `run_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const runId = body.runId || `run_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const targetRunId = runId;
     const existingRun = body.runId ? getRunById(body.runId) : null;
 
     const screenshots: Screenshot[] = existingRun ? [...existingRun.screenshots] : [];
