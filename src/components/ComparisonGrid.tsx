@@ -11,13 +11,16 @@ import {
   Sparkles,
   ExternalLink,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Star,
 } from 'lucide-react';
 
 interface ComparisonGridProps {
   run: Run;
   pages: ProjectPage[];
   breakpoints: Breakpoint[];
+  isBaseline: boolean;
+  onSetAsBaseline: (runId: string) => Promise<void>;
   onSelectComparison: (pageId: string, breakpointId: string) => void;
 }
 
@@ -25,10 +28,22 @@ export function ComparisonGrid({
   run,
   pages,
   breakpoints,
+  isBaseline,
+  onSetAsBaseline,
   onSelectComparison,
 }: ComparisonGridProps) {
   const [filter, setFilter] = useState<'all' | 'changed' | 'identical' | 'new'>('all');
   const [selectedBreakpointFilter, setSelectedBreakpointFilter] = useState<string>('all');
+  const [isPromoting, setIsPromoting] = useState(false);
+
+  const handlePromote = async () => {
+    setIsPromoting(true);
+    try {
+      await onSetAsBaseline(run.id);
+    } finally {
+      setIsPromoting(false);
+    }
+  };
 
   const filteredComparisons = run.comparisons.filter((c) => {
     if (filter === 'changed' && c.status !== 'changed') return false;
@@ -42,14 +57,35 @@ export function ComparisonGrid({
     <div className="space-y-4">
       {/* Header & Filter Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-800">
-        <div>
-          <h3 className="text-sm font-bold text-white flex items-center gap-2">
-            <Layers className="w-4 h-4 text-indigo-400" />
-            <span>Overview Matrix ({filteredComparisons.length} Viewports)</span>
-          </h3>
-          <p className="text-xs text-slate-400">
-            Compare every inner page across Desktop, Tablet, and Mobile.
-          </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <div>
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <Layers className="w-4 h-4 text-indigo-400" />
+              <span>Overview Matrix ({filteredComparisons.length} Viewports)</span>
+            </h3>
+            <p className="text-xs text-slate-400">
+              Compare every inner page across Desktop, Tablet, and Mobile.
+            </p>
+          </div>
+
+          {/* Baseline Promotion Button */}
+          {isBaseline ? (
+            <span className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 font-semibold text-xs">
+              <Star className="w-3.5 h-3.5 fill-amber-400" />
+              <span>Active Baseline</span>
+            </span>
+          ) : (
+            <button
+              type="button"
+              disabled={isPromoting}
+              onClick={handlePromote}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 border border-amber-500/40 hover:border-amber-400 text-amber-200 hover:text-amber-100 font-semibold text-xs shadow-lg shadow-amber-500/10 transition-all cursor-pointer"
+              title="Set this check run as the new baseline for all future visual regression comparisons"
+            >
+              <Star className="w-3.5 h-3.5 fill-amber-400 animate-pulse text-amber-400" />
+              <span>{isPromoting ? 'Setting as Baseline...' : 'Promote Run to Baseline'}</span>
+            </button>
+          )}
         </div>
 
         {/* Filter Pills */}

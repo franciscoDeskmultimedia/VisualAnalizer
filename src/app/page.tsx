@@ -52,6 +52,10 @@ export default function HomePage() {
   const [isShareTeamOpen, setIsShareTeamOpen] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
 
+  // Toast & Promotion state
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isPromoting, setIsPromoting] = useState(false);
+
   // View state tab: Deep Comparison vs Overview Grid
   const [viewTab, setViewTab] = useState<'compare' | 'grid'>('compare');
 
@@ -189,6 +193,7 @@ export default function HomePage() {
   // Handler: Set as baseline
   const handleSetAsBaseline = async (runId: string) => {
     if (!activeProject) return;
+    setIsPromoting(true);
     try {
       const res = await fetch(`/api/projects/${activeProject.id}/baseline`, {
         method: 'POST',
@@ -197,11 +202,30 @@ export default function HomePage() {
       });
       const data = await res.json();
       if (data.success) {
+        // Optimistically update project and runs
+        setActiveProject((prev) => (prev ? { ...prev, baselineRunId: runId } : null));
+        setRuns((prev) =>
+          prev.map((r) => ({
+            ...r,
+            isBaseline: r.id === runId,
+          }))
+        );
+        setActiveRun((prev) => (prev ? { ...prev, isBaseline: prev.id === runId } : null));
+
+        setToastMessage('⭐ Run promoted to baseline! All subsequent visual checks will compare against this run.');
+        setTimeout(() => setToastMessage(null), 4500);
+
         await fetchProjects();
         await fetchRuns(activeProject.id);
+      } else {
+        alert(data.error || 'Failed to promote run to baseline');
       }
-    } catch (err) {
-      console.error('Error setting baseline:', err);
+    } catch (err: unknown) {
+      const error = err as Error;
+      console.error('Error setting baseline:', error);
+      alert(`Error setting baseline: ${error.message}`);
+    } finally {
+      setIsPromoting(false);
     }
   };
 
@@ -453,7 +477,89 @@ export default function HomePage() {
 
         {/* If Active Run Exists */}
         {activeProject && activeRun && (
-          <>
+          <div className="space-y-4">
+            {/* Active Run Status & Baseline Promotion Action Banner */}
+            <div
+              className={`rounded-2xl p-4 sm:p-5 border transition-all ${
+                isCurrentRunBaseline
+                  ? 'bg-amber-950/20 border-amber-500/30'
+                  : 'bg-gradient-to-r from-slate-900 via-indigo-950/30 to-amber-950/20 border-amber-500/30 shadow-xl shadow-amber-500/5'
+              }`}
+            >
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <span className="font-mono text-sm font-bold text-white">
+                      Run #{runs.findIndex((r) => r.id === activeRun.id) !== -1 ? runs.length - runs.findIndex((r) => r.id === activeRun.id) : 1}
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      ({new Date(activeRun.createdAt).toLocaleString(undefined, {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })})
+                    </span>
+
+                    {isCurrentRunBaseline ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                        <Star className="w-3.5 h-3.5 fill-amber-300" />
+                        <span>Active Baseline Reference</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700">
+                        <span>New Check Run</span>
+                      </span>
+                    )}
+
+                    {/* Stats pills */}
+                    <div className="flex items-center gap-1.5 text-xs flex-wrap">
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
+                        {activeRun.passedChecks} Matched
+                      </span>
+                      {activeRun.changedChecks > 0 && (
+                        <span className="px-2 py-0.5 rounded-md bg-rose-500/10 text-rose-400 border border-rose-500/20 font-medium">
+                          {activeRun.changedChecks} Changed
+                        </span>
+                      )}
+                      {activeRun.newChecks > 0 && (
+                        <span className="px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 font-medium">
+                          {activeRun.newChecks} New Captures
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-300">
+                    {isCurrentRunBaseline
+                      ? '⭐ This check run is the active baseline reference. All subsequent visual regression checks will be compared against these screenshots.'
+                      : '💡 If these visual changes are expected and intended, promote this run to baseline so future checks compare against it.'}
+                  </p>
+                </div>
+
+                {/* Right: Promote Action */}
+                <div className="flex items-center gap-2">
+                  {!isCurrentRunBaseline ? (
+                    <button
+                      type="button"
+                      disabled={isPromoting}
+                      onClick={() => handleSetAsBaseline(activeRun.id)}
+                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                      title="Set all screenshots in this check run as the new baseline reference"
+                    >
+                      <Star className="w-4 h-4 fill-slate-950" />
+                      <span>{isPromoting ? 'Promoting...' : 'Promote this Run to Baseline'}</span>
+                    </button>
+                  ) : (
+                    <span className="text-xs text-amber-300/80 font-mono hidden sm:inline">
+                      Source of truth
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Viewer / Grid */}
             {viewTab === 'compare' ? (
               <ComparisonViewer
                 run={activeRun}
@@ -467,12 +573,14 @@ export default function HomePage() {
                 run={activeRun}
                 pages={activeProject.pages}
                 breakpoints={activeProject.breakpoints}
+                isBaseline={isCurrentRunBaseline}
+                onSetAsBaseline={handleSetAsBaseline}
                 onSelectComparison={(pageId, breakpointId) => {
                   setViewTab('compare');
                 }}
               />
             )}
-          </>
+          </div>
         )}
       </main>
 
@@ -554,6 +662,16 @@ export default function HomePage() {
         onClose={() => setProjectToDelete(null)}
         onConfirmDelete={handleConfirmDeleteProject}
       />
+
+      {/* Baseline Action Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-5 duration-200">
+          <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-slate-900 border border-amber-500/50 text-amber-200 shadow-2xl shadow-black text-xs font-semibold backdrop-blur-md">
+            <Star className="w-4 h-4 fill-amber-400 text-amber-400 animate-spin" />
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -351,25 +351,28 @@ export function ComparisonViewer({
           </button>
 
           {/* Promote to Baseline Button */}
-          <button
-            onClick={handlePromoteBaseline}
-            disabled={isPromotingBaseline || isBaseline}
-            title={isBaseline ? 'Current active baseline' : 'Set this run as the project baseline'}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
-              isBaseline
-                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-default'
-                : 'bg-slate-900 hover:bg-amber-500/10 text-slate-300 hover:text-amber-300 border border-slate-800 hover:border-amber-500/30'
-            }`}
-          >
-            <Star className={`w-3.5 h-3.5 ${isBaseline ? 'fill-amber-400 text-amber-400' : ''}`} />
-            <span>{isBaseline ? 'Active Baseline' : 'Set as Baseline'}</span>
-          </button>
+          {isBaseline ? (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/15 text-amber-300 border border-amber-500/30 text-xs font-semibold shadow-sm">
+              <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+              <span>Active Baseline</span>
+            </div>
+          ) : (
+            <button
+              onClick={handlePromoteBaseline}
+              disabled={isPromotingBaseline}
+              title="Promote all screenshots in this check run as the new baseline reference"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-200 hover:text-amber-100 border border-amber-500/40 hover:border-amber-400 shadow-md shadow-amber-500/10 cursor-pointer"
+            >
+              <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 animate-pulse" />
+              <span>{isPromotingBaseline ? 'Promoting...' : 'Promote Run to Baseline'}</span>
+            </button>
+          )}
         </div>
       </div>
 
       {/* Difference Summary Indicator Banner */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           {/* Status Badge */}
           {isIdentical && (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-semibold">
@@ -379,19 +382,49 @@ export function ComparisonViewer({
           )}
 
           {isChanged && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/30 font-semibold">
-              <AlertTriangle className="w-4 h-4 animate-bounce" />
-              <span>
-                Visual Diff Detected: {currentComparison.diffPercentage}% mismatch (
-                {currentComparison.diffPixelCount.toLocaleString()} pixels)
-              </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/30 font-semibold">
+                <AlertTriangle className="w-4 h-4 animate-bounce" />
+                <span>
+                  Visual Diff Detected: {currentComparison.diffPercentage}% mismatch (
+                  {currentComparison.diffPixelCount.toLocaleString()} pixels)
+                </span>
+              </div>
+
+              {!isBaseline && (
+                <button
+                  type="button"
+                  onClick={handlePromoteBaseline}
+                  disabled={isPromotingBaseline}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-semibold text-[11px] transition-colors cursor-pointer"
+                  title="If these changes are intended, promote this check run to baseline"
+                >
+                  <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                  <span>Accept Changes & Set Baseline</span>
+                </button>
+              )}
             </div>
           )}
 
           {isNew && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 font-semibold">
-              <Sparkles className="w-4 h-4" />
-              <span>Initial Capture (No Prior Baseline to Compare)</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 font-semibold">
+                <Sparkles className="w-4 h-4" />
+                <span>Initial Capture (No Prior Baseline to Compare)</span>
+              </div>
+
+              {!isBaseline && (
+                <button
+                  type="button"
+                  onClick={handlePromoteBaseline}
+                  disabled={isPromotingBaseline}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-semibold text-[11px] transition-colors cursor-pointer"
+                  title="Set this initial capture as the project baseline"
+                >
+                  <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                  <span>Set as Baseline</span>
+                </button>
+              )}
             </div>
           )}
 

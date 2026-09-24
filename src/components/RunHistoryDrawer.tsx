@@ -133,13 +133,17 @@ export function RunHistoryDrawer({
                         <button
                           type="button"
                           onClick={() => onSetAsBaseline(run.id)}
-                          className="flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-amber-300 transition-colors"
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/25 border border-amber-500/30 hover:border-amber-400 text-amber-300 font-semibold text-[11px] transition-all cursor-pointer"
+                          title="Promote this run as baseline"
                         >
-                          <Star className="w-3 h-3" />
-                          <span>Set as Baseline</span>
+                          <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                          <span>Promote to Baseline</span>
                         </button>
                       ) : (
-                        <span className="text-[11px] text-amber-400 font-mono">Current Base</span>
+                        <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+                          <Star className="w-3 h-3 fill-amber-400" />
+                          <span>Active Baseline</span>
+                        </span>
                       )}
 
                       <button
