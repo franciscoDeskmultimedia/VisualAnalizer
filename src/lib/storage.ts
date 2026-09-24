@@ -244,9 +244,42 @@ export function setProjectBaselineRun(projectId: string, runId: string): boolean
   project.baselineRunId = runId;
   project.updatedAt = new Date().toISOString();
 
+  // Find the run being promoted to baseline
+  const baselineRun = data.runs.find((r) => r.id === runId && r.projectId === projectId);
+
   data.runs.forEach((r) => {
     if (r.projectId === projectId) {
-      r.isBaseline = r.id === runId;
+      const isThisBaseline = r.id === runId;
+      r.isBaseline = isThisBaseline;
+
+      if (isThisBaseline) {
+        // For the baseline run itself, all screenshots are now the baseline reference!
+        // Its baselineImage becomes its currentImage, diff is 0, status is identical
+        r.comparisons.forEach((c) => {
+          c.baselineImage = c.currentImage;
+          c.diffImage = undefined;
+          c.diffPixelCount = 0;
+          c.diffPercentage = 0;
+          c.status = 'identical';
+          delete c.errorMessage;
+        });
+        r.passedChecks = r.comparisons.length;
+        r.changedChecks = 0;
+        r.newChecks = 0;
+      } else if (baselineRun) {
+        // For other runs in this project, update their baselineImage reference to point
+        // to the newly promoted baseline's screenshots
+        r.comparisons.forEach((c) => {
+          const match = baselineRun.screenshots.find(
+            (s) =>
+              (s.pageId === c.pageId || s.pagePath === c.pagePath) &&
+              (s.breakpointId === c.breakpointId || s.width === c.width)
+          );
+          if (match && match.imageData) {
+            c.baselineImage = match.imageData;
+          }
+        });
+      }
     }
   });
 

@@ -152,9 +152,9 @@ export function ComparisonGrid({
           if (c.breakpointId === 'tablet' || (c.width >= 600 && c.width < 1024)) Icon = Tablet;
           if (c.breakpointId === 'mobile' || c.width < 600) Icon = Smartphone;
 
-          const isIdentical = c.status === 'identical';
-          const isChanged = c.status === 'changed';
-          const isNew = c.status === 'new';
+          const isIdentical = isBaseline || c.status === 'identical';
+          const isChanged = !isBaseline && c.status === 'changed';
+          const isNew = !isBaseline && c.status === 'new';
 
           return (
             <div
@@ -180,31 +180,34 @@ export function ComparisonGrid({
 
                 {/* Diff status badge */}
                 <div>
-                  {isIdentical && (
+                  {isBaseline ? (
+                    <span className="flex items-center gap-1 text-[10px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 rounded-full">
+                      <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                      <span>Baseline</span>
+                    </span>
+                  ) : isIdentical ? (
                     <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">
                       <CheckCircle2 className="w-3 h-3" />
                       <span>0.00%</span>
                     </span>
-                  )}
-                  {isChanged && (
+                  ) : isChanged ? (
                     <span className="flex items-center gap-1 text-[10px] font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/30 px-2 py-0.5 rounded-full animate-pulse">
                       <AlertTriangle className="w-3 h-3" />
                       <span>{c.diffPercentage}% Diff</span>
                     </span>
-                  )}
-                  {isNew && (
+                  ) : isNew ? (
                     <span className="flex items-center gap-1 text-[10px] font-semibold text-indigo-300 bg-indigo-500/10 border border-indigo-500/30 px-2 py-0.5 rounded-full">
                       <Sparkles className="w-3 h-3" />
                       <span>New Base</span>
                     </span>
-                  )}
+                  ) : null}
                 </div>
               </div>
 
               {/* Card Image Thumbnail Preview with scroll preview on hover */}
               <div className="relative bg-black h-48 overflow-hidden flex items-center justify-center">
                 <img
-                  src={c.diffImage || c.currentImage}
+                  src={isBaseline ? c.currentImage : (c.diffImage || c.currentImage)}
                   alt={c.pageName}
                   className="w-full object-cover object-top transition-transform duration-1000 ease-in-out group-hover:translate-y-[-25%]"
                 />

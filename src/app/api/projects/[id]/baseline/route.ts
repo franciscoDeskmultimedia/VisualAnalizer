@@ -27,7 +27,14 @@ export async function POST(
     }
 
     const ok = setProjectBaselineRun(id, runId);
-    return NextResponse.json({ success: ok, baselineRunId: runId });
+    const updatedProject = getProjectById(id);
+    const updatedRun = getRunById(runId);
+    return NextResponse.json({
+      success: ok,
+      baselineRunId: runId,
+      project: updatedProject,
+      run: updatedRun,
+    });
   } catch (error: unknown) {
     const err = error as Error;
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });

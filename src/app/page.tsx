@@ -202,15 +202,34 @@ export default function HomePage() {
       });
       const data = await res.json();
       if (data.success) {
-        // Optimistically update project and runs
-        setActiveProject((prev) => (prev ? { ...prev, baselineRunId: runId } : null));
-        setRuns((prev) =>
-          prev.map((r) => ({
-            ...r,
-            isBaseline: r.id === runId,
-          }))
-        );
-        setActiveRun((prev) => (prev ? { ...prev, isBaseline: prev.id === runId } : null));
+        if (data.project) {
+          setActiveProject(data.project);
+        } else {
+          setActiveProject((prev) => (prev ? { ...prev, baselineRunId: runId } : null));
+        }
+
+        if (data.run) {
+          setActiveRun(data.run);
+        } else {
+          setActiveRun((prev) => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              isBaseline: true,
+              passedChecks: prev.comparisons.length,
+              changedChecks: 0,
+              newChecks: 0,
+              comparisons: prev.comparisons.map((c) => ({
+                ...c,
+                baselineImage: c.currentImage,
+                diffImage: undefined,
+                diffPercentage: 0,
+                diffPixelCount: 0,
+                status: 'identical',
+              })),
+            };
+          });
+        }
 
         setToastMessage('⭐ Run promoted to baseline! All subsequent visual checks will compare against this run.');
         setTimeout(() => setToastMessage(null), 4500);
