@@ -54,13 +54,15 @@ export async function POST(
     // Check if there is an active baseline run
     const baselineRun = project.baselineRunId ? getRunById(project.baselineRunId) : null;
 
-    const runId = `run_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    const screenshots: Screenshot[] = [];
-    const comparisons: ComparisonItem[] = [];
+    const targetRunId = body.runId || `run_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const existingRun = body.runId ? getRunById(body.runId) : null;
 
-    let passedChecks = 0;
-    let changedChecks = 0;
-    let newChecks = 0;
+    const screenshots: Screenshot[] = existingRun ? [...existingRun.screenshots] : [];
+    const comparisons: ComparisonItem[] = existingRun ? [...existingRun.comparisons] : [];
+
+    let passedChecks = existingRun ? existingRun.passedChecks : 0;
+    let changedChecks = existingRun ? existingRun.changedChecks : 0;
+    let newChecks = existingRun ? existingRun.newChecks : 0;
 
     for (const page of targetPages) {
       const pagePath = page.path.startsWith('/') ? page.path : `/${page.path}`;
@@ -208,7 +210,7 @@ export async function POST(
     const shouldBeBaseline = Boolean(setAsBaseline || !project.baselineRunId);
 
     const newRun: Run = {
-      id: runId,
+      id: targetRunId,
       projectId: project.id,
       createdAt: new Date().toISOString(),
       status: 'completed',

@@ -152,19 +152,27 @@ export default function HomePage() {
   const handleRunCheck = async () => {
     if (!activeProject || isChecking) return;
     setIsChecking(true);
-    setProgressStep(`Preparing test for ${activeProject.name}...`);
+    const runId = `run_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
     try {
-      setProgressStep(`Capturing responsive viewports on ${activeProject.baseUrl}...`);
-      const res = await fetch(`/api/projects/${activeProject.id}/runs`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
+      const pages = activeProject.pages;
+      for (let i = 0; i < pages.length; i++) {
+        const page = pages[i];
+        setProgressStep(`Checking page ${i + 1} of ${pages.length}: ${page.name} (${page.path})...`);
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to complete visual check');
+        const res = await fetch(`/api/projects/${activeProject.id}/runs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            runId,
+            pageIds: [page.id],
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || `Failed on page ${page.name}`);
+        }
       }
 
       await fetchRuns(activeProject.id);
