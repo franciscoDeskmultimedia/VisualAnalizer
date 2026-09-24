@@ -55,6 +55,7 @@ export function ComparisonViewer({
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const [isPromotingBaseline, setIsPromotingBaseline] = useState(false);
   const [scrollProgress, setScrollProgress] = useState<number>(0);
+  const [handleY, setHandleY] = useState<number | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollStageRef = useRef<HTMLDivElement>(null);
@@ -62,6 +63,11 @@ export function ComparisonViewer({
   const rightSidePaneRef = useRef<HTMLDivElement>(null);
   const isDraggingSlider = useRef<boolean>(false);
   const isSyncingScroll = useRef<boolean>(false);
+
+  // Reset handle position when switching comparison
+  useEffect(() => {
+    setHandleY(null);
+  }, [selectedPageId, selectedBreakpointId]);
 
   // Ensure selection remains valid if pages or breakpoints change
   useEffect(() => {
@@ -89,33 +95,61 @@ export function ComparisonViewer({
     setSliderPosition(percentage);
   }, []);
 
+  const updateHandleY = useCallback((clientY: number) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const y = clientY - rect.top;
+    setHandleY(Math.max(24, Math.min(rect.height - 24, y)));
+  }, []);
+
   const handleMouseDown = (e: React.MouseEvent) => {
     isDraggingSlider.current = true;
     handleSliderMove(e.clientX);
+    updateHandleY(e.clientY);
+  };
+
+  const handleDividerMouseMove = (e: React.MouseEvent) => {
+    updateHandleY(e.clientY);
   };
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDraggingSlider.current) return;
       handleSliderMove(e.clientX);
+      updateHandleY(e.clientY);
     };
 
     const handleMouseUp = () => {
       isDraggingSlider.current = false;
     };
 
+    const handleTouchEnd = () => {
+      isDraggingSlider.current = false;
+    };
+
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('touchend', handleTouchEnd);
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [handleSliderMove]);
+  }, [handleSliderMove, updateHandleY]);
 
   // Touch support for mobile / tablet drag
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length > 0) {
+      isDraggingSlider.current = true;
+      handleSliderMove(e.touches[0].clientX);
+      updateHandleY(e.touches[0].clientY);
+    }
+  };
+
   const handleTouchMove = (e: React.TouchEvent) => {
     if (e.touches.length > 0) {
       handleSliderMove(e.touches[0].clientX);
+      updateHandleY(e.touches[0].clientY);
     }
   };
 
@@ -126,6 +160,16 @@ export function ComparisonViewer({
     if (maxScroll > 0) {
       const progress = Math.round((target.scrollTop / maxScroll) * 100);
       setScrollProgress(progress);
+    }
+
+    // Keep handle centered in the visible viewport when scrolling if not actively dragging
+    if (!isDraggingSlider.current && containerRef.current) {
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const visibleCenter = (targetRect.top + targetRect.height / 2) - containerRect.top;
+      if (visibleCenter >= 24 && visibleCenter <= containerRect.height - 24) {
+        setHandleY(visibleCenter);
+      }
     }
   };
 
@@ -606,18 +650,32 @@ export function ComparisonViewer({
                 </div>
               )}
 
-              {/* Divider Line & Sticky Floating Handle */}
+              {/* Draggable Divider Line & Mouse-Following Floating Handle */}
               {hasBaseline && (
                 <div
-                  className="absolute top-0 bottom-0 w-0.5 -translate-x-1/2 bg-white shadow-[0_0_12px_rgba(255,255,255,0.9)] pointer-events-none z-20"
-                  style={{ left: `${sliderPosition}%` }}
+                  onMouseDown={handleMouseDown}
+                  onTouchStart={handleTouchStart}
+                  onTouchMove={handleTouchMove}
+                  onMouseMove={handleDividerMouseMove}
+                  className="absolute top-0 bottom-0 -translate-x-1/2 cursor-ew-resize z-20 group select-none pointer-events-auto"
+                  style={{
+                    left: `${sliderPosition}%`,
+                    width: '36px',
+                  }}
+                  title="Drag anywhere along this line to compare"
                 >
+                  {/* Visible white dividing hairline */}
+                  <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 bg-white shadow-[0_0_12px_rgba(255,255,255,0.9)] transition-colors group-hover:bg-indigo-300 pointer-events-none" />
+
+                  {/* Floating Handle Button that follows cursor Y */}
                   <div
-                    onMouseDown={handleMouseDown}
-                    onTouchMove={handleTouchMove}
-                    className="sticky top-1/2 -translate-y-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-white shadow-2xl border-2 border-indigo-600 flex items-center justify-center text-indigo-700 pointer-events-auto cursor-ew-resize hover:scale-110 transition-transform active:scale-95"
+                    className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white shadow-2xl border-2 border-indigo-600 flex items-center justify-center text-indigo-700 cursor-ew-resize transition-transform hover:scale-110 active:scale-95 group-hover:border-indigo-500 group-hover:text-indigo-600 ring-4 ring-indigo-500/20 pointer-events-none"
+                    style={{
+                      top: handleY !== null ? `${handleY}px` : '50%',
+                      transition: isDraggingSlider.current ? 'none' : 'top 0.08s ease-out, transform 0.15s ease-out',
+                    }}
                   >
-                    <Split className="w-3.5 h-3.5" />
+                    <Split className="w-4 h-4" />
                   </div>
                 </div>
               )}
