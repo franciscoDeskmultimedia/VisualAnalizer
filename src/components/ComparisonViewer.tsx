@@ -546,11 +546,11 @@ export function ComparisonViewer({
           {viewMode === 'slider' && (
             <div
               ref={containerRef}
-              className="relative select-none rounded-xl border border-slate-700/80 shadow-2xl overflow-hidden block"
+              className="relative select-none rounded-xl border border-slate-700/80 shadow-2xl overflow-hidden block m-0 p-0"
               style={{ touchAction: 'pan-y' }}
             >
-              {/* Sticky Top Labels that follow scroll */}
-              <div className="sticky top-2 z-30 flex justify-between px-3 pointer-events-none -mb-9">
+              {/* Floating Top Labels (absolute so they introduce zero layout shift/offset) */}
+              <div className="absolute top-3 left-3 right-3 z-30 flex justify-between pointer-events-none">
                 <div className="bg-slate-950/90 backdrop-blur-md border border-slate-700/80 px-2.5 py-1 rounded-md text-[11px] font-mono text-emerald-400 font-bold shadow-lg">
                   ◀ BASELINE {isBaseline ? '(GOLDEN REFERENCE)' : '(ORIGINAL)'}
                 </div>
@@ -561,23 +561,29 @@ export function ComparisonViewer({
                 )}
               </div>
 
-              {/* Baseline Image (Full scrollable height) */}
-              <div className="w-full relative">
+              {/* Baseline Image (Full scrollable height - establishes container dimensions) */}
+              <div className="w-full relative m-0 p-0 block leading-none">
                 <img
                   src={baselineImageSrc}
                   alt="Baseline Reference"
                   className="w-full h-auto block pointer-events-none select-none"
                   style={{
+                    display: 'block',
+                    width: '100%',
+                    height: 'auto',
+                    margin: 0,
+                    padding: 0,
+                    verticalAlign: 'top',
                     transform: 'translateZ(0)',
                     backfaceVisibility: 'hidden',
                   }}
                 />
               </div>
 
-              {/* Current Image (Clipped on top according to slider position) */}
+              {/* Current Image (Clipped on top according to slider position, exact 1:1 pixel match) */}
               {hasBaseline && (
                 <div
-                  className="absolute inset-0 overflow-hidden pointer-events-none"
+                  className="absolute inset-0 overflow-hidden pointer-events-none m-0 p-0 leading-none"
                   style={{
                     clipPath: `inset(0 0 0 ${sliderPosition}%)`,
                   }}
@@ -585,8 +591,14 @@ export function ComparisonViewer({
                   <img
                     src={currentComparison.currentImage}
                     alt="Current Run"
-                    className="w-full h-auto block select-none"
+                    className="w-full h-auto block select-none pointer-events-none"
                     style={{
+                      display: 'block',
+                      width: '100%',
+                      height: 'auto',
+                      margin: 0,
+                      padding: 0,
+                      verticalAlign: 'top',
                       transform: 'translateZ(0)',
                       backfaceVisibility: 'hidden',
                     }}
