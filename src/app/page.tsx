@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Project, Run, Breakpoint, ProjectPage } from '@/types';
+import { Project, Run, Breakpoint, ProjectPage, User } from '@/types';
 import { Navbar } from '@/components/Navbar';
 import { ComparisonViewer } from '@/components/ComparisonViewer';
 import { ComparisonGrid } from '@/components/ComparisonGrid';
@@ -9,6 +9,9 @@ import { ProjectSettingsModal } from '@/components/ProjectSettingsModal';
 import { NewProjectModal } from '@/components/NewProjectModal';
 import { RunHistoryDrawer } from '@/components/RunHistoryDrawer';
 import { RunProgressModal } from '@/components/RunProgressModal';
+import { AuthModal } from '@/components/AuthModal';
+import { TeamShareModal } from '@/components/TeamShareModal';
+import { DeleteProjectModal } from '@/components/DeleteProjectModal';
 import {
   Layers,
   Play,
@@ -23,10 +26,14 @@ import {
   Plus,
   RefreshCw,
   Sliders,
-  History
+  History,
+  Users,
+  Trash2,
+  Share2
 } from 'lucide-react';
 
 export default function HomePage() {
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [runs, setRuns] = useState<Run[]>([]);
@@ -41,9 +48,27 @@ export default function HomePage() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isShareTeamOpen, setIsShareTeamOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
 
   // View state tab: Deep Comparison vs Overview Grid
   const [viewTab, setViewTab] = useState<'compare' | 'grid'>('compare');
+
+  // Fetch current user
+  const fetchCurrentUser = useCallback(async () => {
+    try {
+      const res = await fetch('/api/auth/me');
+      const data = await res.json();
+      if (data.success && data.user) {
+        setCurrentUser(data.user);
+      } else {
+        setCurrentUser(null);
+      }
+    } catch (err) {
+      console.error('Error fetching current user:', err);
+    }
+  }, []);
 
   // Fetch all projects
   const fetchProjects = useCallback(async () => {
@@ -52,19 +77,51 @@ export default function HomePage() {
       const data = await res.json();
       if (data.success && data.projects) {
         setProjects(data.projects);
-        if (!activeProject && data.projects.length > 0) {
-          setActiveProject(data.projects[0]);
-        }
+        setActiveProject((prev) => {
+          if (prev && data.projects.some((p: Project) => p.id === prev.id)) {
+            return data.projects.find((p: Project) => p.id === prev.id) || null;
+          }
+          return data.projects[0] || null;
+        });
       }
     } catch (err) {
       console.error('Error loading projects:', err);
     } finally {
       setIsLoading(false);
     }
-  }, [activeProject]);
+  }, []);
 
   useEffect(() => {
+    fetchCurrentUser();
     fetchProjects();
+  }, [fetchCurrentUser, fetchProjects]);
+
+  // Check URL for ?invite=token to join team
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const inviteToken = urlParams.get('invite');
+    if (inviteToken) {
+      // Remove query param from url
+      window.history.replaceState({}, document.title, window.location.pathname);
+
+      fetch('/api/projects/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inviteToken }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && data.project) {
+            alert(`You have joined the project team for: ${data.project.name}!`);
+            fetchProjects();
+            setActiveProject(data.project);
+          } else if (data.error && data.error.includes('sign in')) {
+            setIsAuthOpen(true);
+          }
+        })
+        .catch((err) => console.error('Error joining via invite token:', err));
+    }
   }, [fetchProjects]);
 
   // Fetch runs for the active project
@@ -110,7 +167,6 @@ export default function HomePage() {
         throw new Error(data.error || 'Failed to complete visual check');
       }
 
-      // Refresh runs and active run
       await fetchRuns(activeProject.id);
       await fetchProjects();
     } catch (err: unknown) {
@@ -133,7 +189,6 @@ export default function HomePage() {
       });
       const data = await res.json();
       if (data.success) {
-        // Refresh project and runs
         await fetchProjects();
         await fetchRuns(activeProject.id);
       }
@@ -158,15 +213,20 @@ export default function HomePage() {
     }
   };
 
-  // Handler: Delete Project
-  const handleDeleteProject = async (projectId: string) => {
+  // Handler: Delete Project permanently
+  const handleConfirmDeleteProject = async (projectId: string) => {
     const res = await fetch(`/api/projects/${projectId}`, {
       method: 'DELETE',
     });
     const data = await res.json();
     if (data.success) {
-      setActiveProject(null);
-      await fetchProjects();
+      setProjects((prev) => prev.filter((p) => p.id !== projectId));
+      if (activeProject?.id === projectId) {
+        const remaining = projects.filter((p) => p.id !== projectId);
+        setActiveProject(remaining[0] || null);
+      }
+    } else {
+      alert(data.error || 'Failed to delete project');
     }
   };
 
@@ -186,39 +246,11 @@ export default function HomePage() {
     }
   };
 
-  // Export / Import Config
-  const handleExportConfig = () => {
-    if (!activeProject) return;
-    const blob = new Blob([JSON.stringify(activeProject, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${activeProject.name.toLowerCase().replace(/\s+/g, '-')}-config.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleImportConfig = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = async (e: Event) => {
-      const target = e.target as HTMLInputElement;
-      if (!target.files?.[0]) return;
-      const file = target.files[0];
-      const text = await file.text();
-      try {
-        const parsed = JSON.parse(text);
-        if (parsed.name && parsed.baseUrl) {
-          await handleCreateProject(parsed);
-        }
-      } catch (err) {
-        alert('Invalid JSON file configuration');
-      }
-    };
-    input.click();
+  // Handler: Logout
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    setCurrentUser(null);
+    await fetchProjects();
   };
 
   const isCurrentRunBaseline = Boolean(
@@ -231,13 +263,16 @@ export default function HomePage() {
       <Navbar
         projects={projects}
         activeProject={activeProject}
+        currentUser={currentUser}
         onSelectProject={(p) => setActiveProject(p)}
         onOpenNewProject={() => setIsNewProjectOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenHistory={() => setIsHistoryOpen(true)}
+        onOpenShareTeam={() => setIsShareTeamOpen(true)}
+        onOpenAuth={() => setIsAuthOpen(true)}
+        onLogout={handleLogout}
+        onRequestDeleteProject={(p) => setProjectToDelete(p)}
         onRunCheck={handleRunCheck}
-        onExportConfig={handleExportConfig}
-        onImportConfig={handleImportConfig}
         isChecking={isChecking}
         latestRun={activeRun}
       />
@@ -253,12 +288,12 @@ export default function HomePage() {
             <div>
               <h2 className="text-xl font-bold text-white">Welcome to VisualAnalizar</h2>
               <p className="text-xs text-slate-400 mt-2">
-                Automated multi-device visual regression testing. Save projects, specify inner pages, test across Desktop, Tablet & Mobile, and detect visual changes against your base reference.
+                Automated multi-device visual regression testing. Save projects, specify inner pages, test across Desktop, Tablet & Mobile, and collaborate with your team.
               </p>
             </div>
             <button
               onClick={() => setIsNewProjectOpen(true)}
-              className="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm shadow-xl shadow-indigo-600/30 transition-all inline-flex items-center gap-2"
+              className="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm shadow-xl shadow-indigo-600/30 transition-all inline-flex items-center gap-2 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Create Your First Project</span>
@@ -297,6 +332,18 @@ export default function HomePage() {
                       <span>No Baseline Set</span>
                     </span>
                   )}
+
+                  {/* Team Members Count Badge */}
+                  {activeProject.members && activeProject.members.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setIsShareTeamOpen(true)}
+                      className="flex items-center gap-1 text-[11px] font-medium text-indigo-300 bg-indigo-950/60 border border-indigo-800/50 hover:border-indigo-600 px-2.5 py-0.5 rounded-full transition-colors cursor-pointer"
+                    >
+                      <Users className="w-3 h-3 text-indigo-400" />
+                      <span>{activeProject.members.length} Team Members</span>
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-4 text-xs text-slate-400 flex-wrap">
@@ -316,11 +363,22 @@ export default function HomePage() {
 
               {/* Right Stats & Trigger */}
               <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                {/* Share Team Quick Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsShareTeamOpen(true)}
+                  className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-indigo-300 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Invite or manage team collaborators"
+                >
+                  <Share2 className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Share Project</span>
+                </button>
+
                 {/* View switcher: Deep comparison vs Matrix grid */}
                 <div className="flex items-center bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs">
                   <button
                     onClick={() => setViewTab('compare')}
-                    className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+                    className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer ${
                       viewTab === 'compare'
                         ? 'bg-indigo-600 text-white shadow-md'
                         : 'text-slate-400 hover:text-white'
@@ -330,7 +388,7 @@ export default function HomePage() {
                   </button>
                   <button
                     onClick={() => setViewTab('grid')}
-                    className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+                    className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer ${
                       viewTab === 'grid'
                         ? 'bg-indigo-600 text-white shadow-md'
                         : 'text-slate-400 hover:text-white'
@@ -347,6 +405,16 @@ export default function HomePage() {
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isChecking ? 'animate-spin' : ''}`} />
                   <span>{isChecking ? 'Checking...' : 'Check All'}</span>
+                </button>
+
+                {/* Delete Project Quick Action */}
+                <button
+                  type="button"
+                  onClick={() => setProjectToDelete(activeProject)}
+                  className="p-2 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-colors cursor-pointer"
+                  title="Delete this project"
+                >
+                  <Trash2 className="w-4 h-4" />
                 </button>
               </div>
             </div>
@@ -367,7 +435,7 @@ export default function HomePage() {
             </div>
             <button
               onClick={handleRunCheck}
-              className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs shadow-lg shadow-indigo-600/30 transition-all inline-flex items-center gap-2"
+              className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs shadow-lg shadow-indigo-600/30 transition-all inline-flex items-center gap-2 cursor-pointer"
             >
               <Play className="w-3.5 h-3.5 fill-white" />
               <span>Capture Initial Baseline Run</span>
@@ -420,7 +488,7 @@ export default function HomePage() {
           isOpen={isSettingsOpen}
           onClose={() => setIsSettingsOpen(false)}
           onSave={handleSaveProject}
-          onDelete={handleDeleteProject}
+          onDelete={handleConfirmDeleteProject}
         />
       )}
 
@@ -446,6 +514,38 @@ export default function HomePage() {
           progressStep={progressStep}
         />
       )}
+
+      {/* Auth Modal */}
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        onSuccess={(user) => {
+          setCurrentUser(user);
+          fetchProjects();
+        }}
+      />
+
+      {/* Team Share Modal */}
+      {activeProject && (
+        <TeamShareModal
+          project={activeProject}
+          currentUser={currentUser}
+          isOpen={isShareTeamOpen}
+          onClose={() => setIsShareTeamOpen(false)}
+          onUpdateProject={(updated) => {
+            setActiveProject(updated);
+            fetchProjects();
+          }}
+        />
+      )}
+
+      {/* Delete Project Confirmation Modal */}
+      <DeleteProjectModal
+        project={projectToDelete}
+        isOpen={Boolean(projectToDelete)}
+        onClose={() => setProjectToDelete(null)}
+        onConfirmDelete={handleConfirmDeleteProject}
+      />
     </div>
   );
 }

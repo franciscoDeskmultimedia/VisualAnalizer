@@ -12,6 +12,21 @@ export interface ProjectPage {
   path: string;
 }
 
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  createdAt: string;
+}
+
+export interface ProjectMember {
+  userId: string;
+  email: string;
+  name?: string;
+  role: 'owner' | 'editor' | 'viewer';
+  joinedAt: string;
+}
+
 export interface ProjectSettings {
   waitTimeMs: number;
   fullPage: boolean;
@@ -23,6 +38,10 @@ export interface Project {
   id: string;
   name: string;
   baseUrl: string;
+  ownerId?: string;
+  ownerEmail?: string;
+  members?: ProjectMember[];
+  inviteToken?: string;
   pages: ProjectPage[];
   breakpoints: Breakpoint[];
   baselineRunId?: string | null;
