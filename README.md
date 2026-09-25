@@ -6,7 +6,7 @@ VisualAnalizar allows you to save web projects (e.g. `example.com`), configure a
 
 ---
 
-## 🌟 Key Features
+## 🌟 Key Features test
 
 - 📁 **Multi-Project Management**:
   - Save different projects with their base domain (e.g. `https://example.com`, `https://stripe.com`).
