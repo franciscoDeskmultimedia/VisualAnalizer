@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     const user = await getCurrentUser();
-    const projects = await getProjects(user?.id);
+    const projects = await getProjects(user?.id, user?.email);
     return NextResponse.json({ success: true, projects, user });
   } catch (error: unknown) {
     const err = error as Error;
@@ -19,6 +19,13 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: 'Please sign in or create an account to create a project.' },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
     const { name, baseUrl, pages, breakpoints, settings } = body;
 

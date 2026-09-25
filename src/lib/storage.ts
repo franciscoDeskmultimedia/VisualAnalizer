@@ -190,10 +190,30 @@ function mapDbRun(r: any): Run {
   };
 }
 
-export async function getProjects(userId?: string): Promise<Project[]> {
+export async function getProjects(userId?: string, userEmail?: string): Promise<Project[]> {
   if (isDbConfigured) {
     try {
+      if (!userId) {
+        return [];
+      }
+
+      const cleanEmail = userEmail?.toLowerCase().trim();
       const dbProjects = await prisma.project.findMany({
+        where: {
+          OR: [
+            { ownerId: userId },
+            {
+              members: {
+                some: {
+                  OR: [
+                    { userId },
+                    ...(cleanEmail ? [{ email: { equals: cleanEmail, mode: 'insensitive' as const } }] : []),
+                  ],
+                },
+              },
+            },
+          ],
+        },
         include: {
           pages: { orderBy: { order: 'asc' } },
           breakpoints: { orderBy: { order: 'asc' } },
@@ -202,18 +222,7 @@ export async function getProjects(userId?: string): Promise<Project[]> {
         orderBy: { createdAt: 'desc' },
       });
 
-      const mapped = dbProjects.map(mapDbProject);
-
-      if (!userId) {
-        return mapped;
-      }
-
-      return mapped.filter((p) => {
-        if (!p.ownerId) return true;
-        if (p.ownerId === userId) return true;
-        if (p.members?.some((m) => m.userId === userId)) return true;
-        return false;
-      });
+      return dbProjects.map(mapDbProject);
     } catch (err) {
       console.error('Error fetching projects from PostgreSQL, falling back to local storage:', err);
     }
@@ -221,13 +230,13 @@ export async function getProjects(userId?: string): Promise<Project[]> {
 
   const data = readStore();
   if (!userId) {
-    return data.projects;
+    return [];
   }
 
+  const cleanEmail = userEmail?.toLowerCase().trim();
   return data.projects.filter((p) => {
-    if (!p.ownerId) return true;
-    if (p.ownerId === userId) return true;
-    if (p.members?.some((m) => m.userId === userId)) return true;
+    if (p.ownerId && p.ownerId === userId) return true;
+    if (p.members?.some((m) => m.userId === userId || (cleanEmail && m.email?.toLowerCase() === cleanEmail))) return true;
     return false;
   });
 }
@@ -313,7 +322,7 @@ export async function saveProject(project: Project): Promise<Project> {
         if (project.pages && project.pages.length > 0) {
           await tx.projectPage.createMany({
             data: project.pages.map((pg, idx) => ({
-              id: pg.id || `pg_${Date.now()}_${idx}`,
+              id: pg.id?.startsWith(project.id) ? pg.id : `${project.id}_${pg.id || idx}`,
               projectId: project.id,
               name: pg.name,
               path: pg.path,
@@ -327,7 +336,7 @@ export async function saveProject(project: Project): Promise<Project> {
         if (project.breakpoints && project.breakpoints.length > 0) {
           await tx.breakpoint.createMany({
             data: project.breakpoints.map((bp, idx) => ({
-              id: bp.id || `bp_${Date.now()}_${idx}`,
+              id: bp.id?.startsWith(project.id) ? bp.id : `${project.id}_${bp.id || idx}`,
               projectId: project.id,
               name: bp.name,
               width: bp.width,

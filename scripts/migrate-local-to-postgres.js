@@ -62,14 +62,26 @@ async function main() {
   console.log('\n--- Migrating Projects ---');
   for (const p of projects) {
     try {
+      let ownerId = p.ownerId || null;
+      let ownerEmail = p.ownerEmail || null;
+      if (!ownerId) {
+        if (p.name.toLowerCase().includes('walmart')) {
+          ownerId = 'usr_1790363272089_q70eq';
+          ownerEmail = 'francisco.deskmultimedia@gmail.com';
+        } else {
+          ownerId = 'usr_1790282476672_61j9b';
+          ownerEmail = 'demo@visualanalizar.com';
+        }
+      }
+
       await prisma.project.upsert({
         where: { id: p.id },
         create: {
           id: p.id,
           name: p.name,
           baseUrl: p.baseUrl,
-          ownerId: p.ownerId || null,
-          ownerEmail: p.ownerEmail || null,
+          ownerId,
+          ownerEmail,
           inviteToken: p.inviteToken || `inv_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
           baselineRunId: p.baselineRunId || null,
           settings: p.settings,
@@ -79,8 +91,8 @@ async function main() {
         update: {
           name: p.name,
           baseUrl: p.baseUrl,
-          ownerId: p.ownerId || null,
-          ownerEmail: p.ownerEmail || null,
+          ownerId,
+          ownerEmail,
           baselineRunId: p.baselineRunId || null,
           settings: p.settings,
         },
@@ -91,7 +103,7 @@ async function main() {
       if (p.pages && p.pages.length > 0) {
         await prisma.projectPage.createMany({
           data: p.pages.map((pg, idx) => ({
-            id: pg.id || `pg_${p.id}_${idx}`,
+            id: pg.id?.startsWith(p.id) ? pg.id : `${p.id}_${pg.id || idx}`,
             projectId: p.id,
             name: pg.name,
             path: pg.path,
@@ -105,7 +117,7 @@ async function main() {
       if (p.breakpoints && p.breakpoints.length > 0) {
         await prisma.breakpoint.createMany({
           data: p.breakpoints.map((bp, idx) => ({
-            id: bp.id || `bp_${p.id}_${idx}`,
+            id: bp.id?.startsWith(p.id) ? bp.id : `${p.id}_${bp.id || idx}`,
             projectId: p.id,
             name: bp.name,
             width: bp.width,
@@ -117,28 +129,37 @@ async function main() {
       }
 
       // Members
-      if (p.members && p.members.length > 0) {
-        for (const m of p.members) {
-          await prisma.projectMember.upsert({
-            where: {
-              projectId_email: {
-                projectId: p.id,
-                email: m.email.toLowerCase().trim(),
-              },
-            },
-            create: {
+      const membersList = p.members && p.members.length > 0 ? [...p.members] : [];
+      if (ownerId && ownerEmail && !membersList.some((m) => m.email.toLowerCase() === ownerEmail.toLowerCase())) {
+        membersList.push({
+          userId: ownerId,
+          email: ownerEmail,
+          name: ownerEmail === 'francisco.deskmultimedia@gmail.com' ? 'Francisco Cornejo' : 'Demo User',
+          role: 'owner',
+          joinedAt: new Date(p.createdAt || Date.now()).toISOString(),
+        });
+      }
+
+      for (const m of membersList) {
+        await prisma.projectMember.upsert({
+          where: {
+            projectId_email: {
               projectId: p.id,
-              userId: m.userId || null,
               email: m.email.toLowerCase().trim(),
-              name: m.name || null,
-              role: m.role || 'viewer',
-              joinedAt: new Date(m.joinedAt || Date.now()),
             },
-            update: {
-              role: m.role || 'viewer',
-            },
-          });
-        }
+          },
+          create: {
+            projectId: p.id,
+            userId: m.userId || null,
+            email: m.email.toLowerCase().trim(),
+            name: m.name || null,
+            role: m.role || 'viewer',
+            joinedAt: new Date(m.joinedAt || Date.now()),
+          },
+          update: {
+            role: m.role || 'viewer',
+          },
+        });
       }
 
       console.log(`✓ Project migrated: ${p.name} (${p.pages?.length || 0} pages, ${p.breakpoints?.length || 0} breakpoints)`);
