@@ -10,7 +10,7 @@ export async function GET(
 ) {
   try {
     const { id } = await props.params;
-    const project = getProjectById(id);
+    const project = await getProjectById(id);
     if (!project) {
       return NextResponse.json({ success: false, error: 'Project not found' }, { status: 404 });
     }
@@ -33,7 +33,7 @@ export async function POST(
   try {
     const user = await getCurrentUser();
     const { id } = await props.params;
-    const project = getProjectById(id);
+    const project = await getProjectById(id);
     if (!project) {
       return NextResponse.json({ success: false, error: 'Project not found' }, { status: 404 });
     }
@@ -57,9 +57,9 @@ export async function POST(
     }
 
     // Check if the invited user already exists in the system
-    const existingUser = findUserByEmail(email);
+    const existingUser = await findUserByEmail(email);
 
-    const updatedProject = addProjectMember(id, {
+    const updatedProject = await addProjectMember(id, {
       userId: existingUser?.id,
       email,
       name: existingUser?.name,
@@ -80,7 +80,7 @@ export async function DELETE(
   try {
     const user = await getCurrentUser();
     const { id } = await props.params;
-    const project = getProjectById(id);
+    const project = await getProjectById(id);
     if (!project) {
       return NextResponse.json({ success: false, error: 'Project not found' }, { status: 404 });
     }
@@ -97,7 +97,7 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Cannot remove the project owner.' }, { status: 400 });
     }
 
-    const updatedProject = removeProjectMember(id, memberEmail);
+    const updatedProject = await removeProjectMember(id, memberEmail);
     return NextResponse.json({ success: true, project: updatedProject });
   } catch (error: unknown) {
     const err = error as Error;

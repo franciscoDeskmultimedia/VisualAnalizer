@@ -63,23 +63,63 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
+## 🗄️ Persistent Database Setup (PostgreSQL with Prisma)
+
+VisualAnalizar uses **Prisma ORM** with **PostgreSQL** (e.g. Neon, Vercel Postgres, Supabase) for persistent user authentication, projects, breakpoints, and test runs across Vercel serverless deployments.
+
+### 1. Environment Variables
+
+Create a `.env` (or set environment variables in Vercel):
+
+```env
+# Pooled connection string (Neon / Vercel Postgres / Supabase PgBouncer)
+DATABASE_URL="postgres://user:password@ep-example-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require"
+
+# Direct connection string for migrations (required if using connection pooler)
+DIRECT_URL="postgres://user:password@ep-example.us-east-2.aws.neon.tech/neondb?sslmode=require"
+
+# Random secret key for signing user session tokens
+AUTH_SECRET="your-super-secret-random-key"
+```
+
+### 2. Push Schema to Database
+
+```bash
+# Push Prisma schema directly to your PostgreSQL database
+npm run db:push
+```
+
+### 3. (Optional) Import Existing Local Data into PostgreSQL
+
+If you already have existing local runs and projects in `.visual-analizar/data.json`, import them into your PostgreSQL database with:
+
+```bash
+npm run db:import
+```
+
+---
+
 ## ☁️ Deploying to Vercel
 
 1. Push your repository to GitHub:
    ```bash
    git add .
-   git commit -m "Initial commit for VisualAnalizar"
+   git commit -m "feat: add persistent PostgreSQL with Prisma"
    git push origin main
    ```
 2. Import the project into [Vercel](https://vercel.com/new).
-3. Framework preset: **Next.js**.
-4. Click **Deploy**. No additional environment variables required!
+3. Under **Environment Variables**, add:
+   - `DATABASE_URL` (from Neon / Vercel Postgres / Supabase)
+   - `DIRECT_URL` (optional, for migrations)
+   - `AUTH_SECRET`
+4. Click **Deploy**. Vercel will automatically run `prisma generate` during `postinstall`!
 
 ---
 
 ## 🛠️ Tech Stack
 
 - **Framework**: Next.js 16 (App Router, Turbopack)
+- **Database & ORM**: PostgreSQL + Prisma ORM (with lazy-loaded screenshot image blobs)
 - **Styling**: Tailwind CSS
 - **Comparison Engine**: `pixelmatch` + `pngjs`
 - **Headless Browser**: `puppeteer-core` & `@sparticuz/chromium`

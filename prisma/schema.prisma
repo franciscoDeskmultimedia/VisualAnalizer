@@ -1,0 +1,154 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            String          @id @default(cuid())
+  email         String          @unique
+  name          String
+  passwordHash  String
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  ownedProjects Project[]       @relation("ProjectOwner")
+  memberships   ProjectMember[]
+}
+
+model Project {
+  id            String          @id @default(cuid())
+  name          String
+  baseUrl       String
+  ownerId       String?
+  ownerEmail    String?
+  inviteToken   String          @unique
+  baselineRunId String?
+  settings      Json
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  owner         User?           @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  members       ProjectMember[]
+  pages         ProjectPage[]
+  breakpoints   Breakpoint[]
+  runs          Run[]
+
+  @@index([ownerId])
+  @@index([inviteToken])
+}
+
+model ProjectMember {
+  id        String   @id @default(cuid())
+  projectId String
+  userId    String?
+  email     String
+  name      String?
+  role      String   @default("viewer")
+  joinedAt  DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, email])
+  @@index([userId])
+}
+
+model ProjectPage {
+  id        String  @id @default(cuid())
+  projectId String
+  name      String
+  path      String
+  order     Int     @default(0)
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model Breakpoint {
+  id        String  @id @default(cuid())
+  projectId String
+  name      String
+  width     Int
+  height    Int
+  icon      String? @default("desktop")
+  order     Int     @default(0)
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model Run {
+  id            String           @id @default(cuid())
+  projectId     String
+  createdAt     DateTime         @default(now())
+  status        String           @default("completed")
+  isBaseline    Boolean          @default(false)
+  totalChecks   Int              @default(0)
+  passedChecks  Int              @default(0)
+  changedChecks Int              @default(0)
+  newChecks     Int              @default(0)
+  project       Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  screenshots   Screenshot[]
+  comparisons   ComparisonItem[]
+
+  @@index([projectId])
+  @@index([createdAt])
+}
+
+model Screenshot {
+  id             String           @id @default(cuid())
+  runId          String
+  pageId         String
+  pageName       String
+  pagePath       String
+  breakpointId   String
+  breakpointName String
+  width          Int
+  height         Int
+  fullUrl        String
+  capturedAt     DateTime         @default(now())
+  run            Run              @relation(fields: [runId], references: [id], onDelete: Cascade)
+  imageBlob      ScreenshotImage?
+
+  @@index([runId])
+}
+
+model ScreenshotImage {
+  id           String     @id @default(cuid())
+  screenshotId String     @unique
+  imageData    String     @db.Text
+  screenshot   Screenshot @relation(fields: [screenshotId], references: [id], onDelete: Cascade)
+}
+
+model ComparisonItem {
+  id              String            @id @default(cuid())
+  runId           String
+  pageId          String
+  pageName        String
+  pagePath        String
+  breakpointId    String
+  breakpointName  String
+  width           Int
+  height          Int
+  fullUrl         String
+  diffPixelCount  Int               @default(0)
+  totalPixelCount Int               @default(0)
+  diffPercentage  Float             @default(0)
+  status          String            @default("identical")
+  errorMessage    String?
+  run             Run               @relation(fields: [runId], references: [id], onDelete: Cascade)
+  images          ComparisonImages?
+
+  @@index([runId])
+}
+
+model ComparisonImages {
+  id            String         @id @default(cuid())
+  comparisonId  String         @unique
+  baselineImage String?        @db.Text
+  currentImage  String         @db.Text
+  diffImage     String?        @db.Text
+  comparison    ComparisonItem @relation(fields: [comparisonId], references: [id], onDelete: Cascade)
+}

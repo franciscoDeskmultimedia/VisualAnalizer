@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { cookies } from 'next/headers';
 import { User } from '@/types';
+import { prisma, isDbConfigured } from './prisma';
 import { readStore, writeStore } from './storage';
 
 const SESSION_COOKIE_NAME = 'va_session';
@@ -41,7 +42,7 @@ export function verifyToken<T>(token: string): T | null {
       return JSON.parse(decoded) as T;
     }
     return null;
-  } catch (err) {
+  } catch {
     return null;
   }
 }
@@ -49,16 +50,54 @@ export function verifyToken<T>(token: string): T | null {
 /**
  * Find user by email
  */
-export function findUserByEmail(email: string): StoredUser | null {
+export async function findUserByEmail(email: string): Promise<StoredUser | null> {
+  const cleanEmail = email.toLowerCase().trim();
+  if (isDbConfigured) {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { email: cleanEmail },
+      });
+      if (!user) return null;
+      return {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        passwordHash: user.passwordHash,
+        createdAt: user.createdAt.toISOString(),
+      };
+    } catch (err) {
+      console.error('Error finding user by email in PostgreSQL:', err);
+      // Fallback to local store if DB error occurs
+    }
+  }
+
   const data = readStore();
   const users: StoredUser[] = (data as any).users || [];
-  return users.find((u) => u.email.toLowerCase() === email.toLowerCase().trim()) || null;
+  return users.find((u) => u.email.toLowerCase() === cleanEmail) || null;
 }
 
 /**
  * Find user by ID
  */
-export function findUserById(id: string): User | null {
+export async function findUserById(id: string): Promise<User | null> {
+  if (isDbConfigured) {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id },
+      });
+      if (!user) return null;
+      return {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        createdAt: user.createdAt.toISOString(),
+      };
+    } catch (err) {
+      console.error('Error finding user by id in PostgreSQL:', err);
+      // Fallback to local store if DB error occurs
+    }
+  }
+
   const data = readStore();
   const users: StoredUser[] = (data as any).users || [];
   const user = users.find((u) => u.id === id);
@@ -72,7 +111,7 @@ export function findUserById(id: string): User | null {
  */
 export async function registerUser(name: string, email: string, password: string): Promise<User> {
   const cleanEmail = email.toLowerCase().trim();
-  const existing = findUserByEmail(cleanEmail);
+  const existing = await findUserByEmail(cleanEmail);
   if (existing) {
     throw new Error('A user with this email address already exists.');
   }
@@ -83,6 +122,27 @@ export async function registerUser(name: string, email: string, password: string
 
   const salt = await bcrypt.genSalt(10);
   const passwordHash = await bcrypt.hash(password, salt);
+
+  if (isDbConfigured) {
+    try {
+      const newUser = await prisma.user.create({
+        data: {
+          name: name.trim() || 'Team Member',
+          email: cleanEmail,
+          passwordHash,
+        },
+      });
+
+      return {
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        createdAt: newUser.createdAt.toISOString(),
+      };
+    } catch (err) {
+      console.error('Error registering user in PostgreSQL, falling back to local storage:', err);
+    }
+  }
 
   const newUser: StoredUser = {
     id: `usr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -108,7 +168,7 @@ export async function registerUser(name: string, email: string, password: string
  */
 export async function authenticateUser(email: string, password: string): Promise<User> {
   const cleanEmail = email.toLowerCase().trim();
-  const user = findUserByEmail(cleanEmail);
+  const user = await findUserByEmail(cleanEmail);
   if (!user) {
     throw new Error('Invalid email or password.');
   }
@@ -133,7 +193,7 @@ export async function getCurrentUser(): Promise<User | null> {
   const payload = verifyToken<{ userId: string }>(token);
   if (!payload?.userId) return null;
 
-  return findUserById(payload.userId);
+  return await findUserById(payload.userId);
 }
 
 /**

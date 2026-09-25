@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     const user = await getCurrentUser();
-    const projects = getProjects(user?.id);
+    const projects = await getProjects(user?.id);
     return NextResponse.json({ success: true, projects, user });
   } catch (error: unknown) {
     const err = error as Error;
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
       updatedAt: new Date().toISOString(),
     };
 
-    saveProject(newProject);
+    await saveProject(newProject);
 
     return NextResponse.json({ success: true, project: newProject }, { status: 201 });
   } catch (error: unknown) {

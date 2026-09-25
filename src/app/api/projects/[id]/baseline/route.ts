@@ -9,7 +9,7 @@ export async function POST(
 ) {
   try {
     const { id } = await props.params;
-    const project = getProjectById(id);
+    const project = await getProjectById(id);
     if (!project) {
       return NextResponse.json({ success: false, error: 'Project not found' }, { status: 404 });
     }
@@ -21,14 +21,14 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'runId is required' }, { status: 400 });
     }
 
-    const run = getRunById(runId);
+    const run = await getRunById(runId);
     if (!run || run.projectId !== id) {
       return NextResponse.json({ success: false, error: 'Run not found for this project' }, { status: 404 });
     }
 
-    const ok = setProjectBaselineRun(id, runId);
-    const updatedProject = getProjectById(id);
-    const updatedRun = getRunById(runId);
+    const ok = await setProjectBaselineRun(id, runId);
+    const updatedProject = await getProjectById(id);
+    const updatedRun = await getRunById(runId);
     return NextResponse.json({
       success: ok,
       baselineRunId: runId,

@@ -21,13 +21,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Invite token is required.' }, { status: 400 });
     }
 
-    const project = getProjectByInviteToken(inviteToken);
+    const project = await getProjectByInviteToken(inviteToken);
     if (!project) {
       return NextResponse.json({ success: false, error: 'Invalid or expired invite token.' }, { status: 404 });
     }
 
     // Add user as editor member
-    const updated = addProjectMember(project.id, {
+    const updated = await addProjectMember(project.id, {
       userId: user.id,
       email: user.email,
       name: user.name,

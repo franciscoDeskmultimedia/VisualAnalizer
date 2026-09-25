@@ -9,7 +9,7 @@ export async function GET(
 ) {
   try {
     const { id } = await props.params;
-    const project = getProjectById(id);
+    const project = await getProjectById(id);
     if (!project) {
       return NextResponse.json({ success: false, error: 'Project not found' }, { status: 404 });
     }
@@ -26,7 +26,7 @@ export async function PUT(
 ) {
   try {
     const { id } = await props.params;
-    const project = getProjectById(id);
+    const project = await getProjectById(id);
     if (!project) {
       return NextResponse.json({ success: false, error: 'Project not found' }, { status: 404 });
     }
@@ -51,7 +51,7 @@ export async function PUT(
       updatedAt: new Date().toISOString(),
     };
 
-    saveProject(updatedProject);
+    await saveProject(updatedProject);
     return NextResponse.json({ success: true, project: updatedProject });
   } catch (error: unknown) {
     const err = error as Error;
@@ -65,7 +65,7 @@ export async function DELETE(
 ) {
   try {
     const { id } = await props.params;
-    const deleted = deleteProject(id);
+    const deleted = await deleteProject(id);
     return NextResponse.json({ success: deleted });
   } catch (error: unknown) {
     const err = error as Error;

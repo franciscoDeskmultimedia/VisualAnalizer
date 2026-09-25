@@ -605,37 +605,14 @@ export function ComparisonViewer({
                 )}
               </div>
 
-              {/* Baseline Image (Full scrollable height - establishes container dimensions) */}
-              <div className="w-full relative m-0 p-0 block leading-none">
-                <img
-                  src={baselineImageSrc}
-                  alt="Baseline Reference"
-                  className="w-full h-auto block pointer-events-none select-none"
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    height: 'auto',
-                    margin: 0,
-                    padding: 0,
-                    verticalAlign: 'top',
-                    transform: 'translateZ(0)',
-                    backfaceVisibility: 'hidden',
-                  }}
-                />
-              </div>
-
-              {/* Current Image (Clipped on top according to slider position, exact 1:1 pixel match) */}
-              {hasBaseline && (
-                <div
-                  className="absolute inset-0 overflow-hidden pointer-events-none m-0 p-0 leading-none"
-                  style={{
-                    clipPath: `inset(0 0 0 ${sliderPosition}%)`,
-                  }}
-                >
+              {/* Image Comparison Layer (CSS Grid ensures container height expands to the tallest of Baseline vs Current) */}
+              <div className="w-full grid grid-cols-1 grid-rows-1 items-start m-0 p-0 leading-none relative">
+                {/* Baseline Image */}
+                <div className="col-start-1 row-start-1 w-full relative m-0 p-0 block leading-none">
                   <img
-                    src={currentComparison.currentImage}
-                    alt="Current Run"
-                    className="w-full h-auto block select-none pointer-events-none"
+                    src={baselineImageSrc}
+                    alt="Baseline Reference"
+                    className="w-full h-auto block pointer-events-none select-none"
                     style={{
                       display: 'block',
                       width: '100%',
@@ -648,7 +625,33 @@ export function ComparisonViewer({
                     }}
                   />
                 </div>
-              )}
+
+                {/* Current Image (Clipped on top according to slider position, exact 1:1 pixel match) */}
+                {hasBaseline && (
+                  <div
+                    className="col-start-1 row-start-1 w-full overflow-hidden pointer-events-none m-0 p-0 leading-none z-10"
+                    style={{
+                      clipPath: `inset(0 0 0 ${sliderPosition}%)`,
+                    }}
+                  >
+                    <img
+                      src={currentComparison.currentImage}
+                      alt="Current Run"
+                      className="w-full h-auto block select-none pointer-events-none"
+                      style={{
+                        display: 'block',
+                        width: '100%',
+                        height: 'auto',
+                        margin: 0,
+                        padding: 0,
+                        verticalAlign: 'top',
+                        transform: 'translateZ(0)',
+                        backfaceVisibility: 'hidden',
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
 
               {/* Draggable Divider Line & Mouse-Following Floating Handle */}
               {hasBaseline && (
@@ -776,26 +779,30 @@ export function ComparisonViewer({
 
           {/* MODE 4: ONION SKIN (FULL SCROLLABLE HEIGHT) */}
           {viewMode === 'onion-skin' && (
-            <div className="relative select-none rounded-xl border border-slate-700/80 shadow-2xl block w-full">
-              {/* Baseline bottom */}
-              <img
-                src={baselineImageSrc}
-                alt="Baseline"
-                className="w-full h-auto block"
-              />
-              {/* Current overlay */}
-              {hasBaseline && (
-                <div
-                  className="absolute inset-0"
-                  style={{ opacity: onionOpacity / 100 }}
-                >
+            <div className="relative select-none rounded-xl border border-slate-700/80 shadow-2xl block w-full overflow-hidden">
+              <div className="w-full grid grid-cols-1 grid-rows-1 items-start m-0 p-0 leading-none relative">
+                {/* Baseline bottom */}
+                <div className="col-start-1 row-start-1 w-full">
                   <img
-                    src={currentComparison.currentImage}
-                    alt="Current overlay"
+                    src={baselineImageSrc}
+                    alt="Baseline"
                     className="w-full h-auto block"
                   />
                 </div>
-              )}
+                {/* Current overlay */}
+                {hasBaseline && (
+                  <div
+                    className="col-start-1 row-start-1 w-full z-10"
+                    style={{ opacity: onionOpacity / 100 }}
+                  >
+                    <img
+                      src={currentComparison.currentImage}
+                      alt="Current overlay"
+                      className="w-full h-auto block"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

@@ -14,7 +14,7 @@ export async function GET(
 ) {
   try {
     const { id } = await props.params;
-    const runs = getRunsByProjectId(id);
+    const runs = await getRunsByProjectId(id);
     return NextResponse.json({ success: true, runs });
   } catch (error: unknown) {
     const err = error as Error;
@@ -28,7 +28,7 @@ export async function POST(
 ) {
   try {
     const { id } = await props.params;
-    const project = getProjectById(id);
+    const project = await getProjectById(id);
     if (!project) {
       return NextResponse.json({ success: false, error: 'Project not found' }, { status: 404 });
     }
@@ -52,11 +52,11 @@ export async function POST(
     }
 
     // Check if there is an active baseline run
-    const baselineRun = project.baselineRunId ? getRunById(project.baselineRunId) : null;
+    const baselineRun = project.baselineRunId ? await getRunById(project.baselineRunId) : null;
 
     const runId = body.runId || `run_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const targetRunId = runId;
-    const existingRun = body.runId ? getRunById(body.runId) : null;
+    const existingRun = body.runId ? await getRunById(body.runId) : null;
 
     const screenshots: Screenshot[] = existingRun ? [...existingRun.screenshots] : [];
     const comparisons: ComparisonItem[] = existingRun ? [...existingRun.comparisons] : [];
@@ -224,10 +224,10 @@ export async function POST(
       comparisons,
     };
 
-    saveRun(newRun);
+    await saveRun(newRun);
 
     if (shouldBeBaseline) {
-      setProjectBaselineRun(project.id, newRun.id);
+      await setProjectBaselineRun(project.id, newRun.id);
     }
 
     return NextResponse.json({ success: true, run: newRun });
