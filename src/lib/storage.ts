@@ -168,24 +168,44 @@ function mapDbRun(r: any): Run {
       imageData: s.imageBlob?.imageData || '',
       capturedAt: s.capturedAt.toISOString(),
     })),
-    comparisons: (r.comparisons || []).map((c: any) => ({
-      id: c.id,
-      pageId: c.pageId,
-      pageName: c.pageName,
-      pagePath: c.pagePath,
-      breakpointId: c.breakpointId,
-      breakpointName: c.breakpointName,
-      width: c.width,
-      height: c.height,
-      fullUrl: c.fullUrl,
-      baselineImage: c.images?.baselineImage || undefined,
-      currentImage: c.images?.currentImage || '',
-      diffImage: c.images?.diffImage || undefined,
-      diffPixelCount: c.diffPixelCount,
-      totalPixelCount: c.totalPixelCount,
-      diffPercentage: c.diffPercentage,
-      status: c.status as any,
-      errorMessage: c.errorMessage || undefined,
+    comparisons: (r.comparisons || []).map((c: any) => {
+      const currentImg = c.images?.currentImage || '';
+      const baseImg = c.images?.baselineImage || (r.isBaseline ? currentImg : undefined);
+      return {
+        id: c.id,
+        pageId: c.pageId,
+        pageName: c.pageName,
+        pagePath: c.pagePath,
+        breakpointId: c.breakpointId,
+        breakpointName: c.breakpointName,
+        width: c.width,
+        height: c.height,
+        fullUrl: c.fullUrl,
+        baselineImage: baseImg,
+        currentImage: currentImg,
+        diffImage: c.images?.diffImage || undefined,
+        diffPixelCount: c.diffPixelCount,
+        totalPixelCount: c.totalPixelCount,
+        diffPercentage: c.diffPercentage,
+        status: c.status as any,
+        errorMessage: c.errorMessage || undefined,
+      };
+    }),
+  };
+}
+
+export function stripRunImages(r: Run): Run {
+  return {
+    ...r,
+    screenshots: (r.screenshots || []).map((s) => ({
+      ...s,
+      imageData: '',
+    })),
+    comparisons: (r.comparisons || []).map((c) => ({
+      ...c,
+      baselineImage: undefined,
+      currentImage: '',
+      diffImage: undefined,
     })),
   };
 }
@@ -348,7 +368,8 @@ export async function saveProject(project: Project): Promise<Project> {
         }
       });
 
-      return project;
+      const persisted = await getProjectById(project.id);
+      return persisted || project;
     } catch (err) {
       console.error('Error saving project to PostgreSQL, falling back to local file storage:', err);
     }
@@ -479,18 +500,14 @@ export async function removeProjectMember(projectId: string, memberEmailOrId: st
   return project;
 }
 
-export async function getRunsByProjectId(projectId: string): Promise<Run[]> {
+export async function getRunsByProjectId(projectId: string, includeImages = false): Promise<Run[]> {
   if (isDbConfigured) {
     try {
       const dbRuns = await prisma.run.findMany({
         where: { projectId },
         include: {
-          screenshots: {
-            include: { imageBlob: true },
-          },
-          comparisons: {
-            include: { images: true },
-          },
+          screenshots: includeImages ? { include: { imageBlob: true } } : true,
+          comparisons: includeImages ? { include: { images: true } } : true,
         },
         orderBy: { createdAt: 'desc' },
       });
@@ -501,18 +518,27 @@ export async function getRunsByProjectId(projectId: string): Promise<Run[]> {
   }
 
   const data = readStore();
-  return data.runs
+  const runs = data.runs
     .filter((r) => r.projectId === projectId)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  if (includeImages) {
+    return runs;
+  }
+  return runs.map(stripRunImages);
 }
 
-export async function getRunById(runId: string, includeImages = true): Promise<Run | undefined> {
+export async function getRunById(
+  runId: string,
+  includeImages = true,
+  includeScreenshotBlobs = false
+): Promise<Run | undefined> {
   if (isDbConfigured) {
     try {
       const r = await prisma.run.findUnique({
         where: { id: runId },
         include: {
-          screenshots: includeImages ? { include: { imageBlob: true } } : true,
+          screenshots: includeScreenshotBlobs ? { include: { imageBlob: true } } : true,
           comparisons: includeImages ? { include: { images: true } } : true,
         },
       });
@@ -523,7 +549,12 @@ export async function getRunById(runId: string, includeImages = true): Promise<R
   }
 
   const data = readStore();
-  return data.runs.find((r) => r.id === runId);
+  const run = data.runs.find((r) => r.id === runId);
+  if (!run) return undefined;
+  if (!includeImages) {
+    return stripRunImages(run);
+  }
+  return run;
 }
 
 export async function saveRun(run: Run): Promise<Run> {
@@ -554,7 +585,7 @@ export async function saveRun(run: Run): Promise<Run> {
           },
         });
 
-        // Insert / Upsert Screenshots
+        // Insert / Upsert Screenshots (metadata only, avoid multi-megabyte duplicate blobs)
         for (const s of run.screenshots) {
           await tx.screenshot.upsert({
             where: { id: s.id },
@@ -570,25 +601,10 @@ export async function saveRun(run: Run): Promise<Run> {
               height: s.height,
               fullUrl: s.fullUrl,
               capturedAt: new Date(s.capturedAt),
-              imageBlob: s.imageData
-                ? {
-                    create: {
-                      imageData: s.imageData,
-                    },
-                  }
-                : undefined,
             },
             update: {
               width: s.width,
               height: s.height,
-              imageBlob: s.imageData
-                ? {
-                    upsert: {
-                      create: { imageData: s.imageData },
-                      update: { imageData: s.imageData },
-                    },
-                  }
-                : undefined,
             },
           });
         }
@@ -615,7 +631,7 @@ export async function saveRun(run: Run): Promise<Run> {
               errorMessage: c.errorMessage || null,
               images: {
                 create: {
-                  baselineImage: c.baselineImage || null,
+                  baselineImage: (c.baselineImage && c.baselineImage !== c.currentImage) ? c.baselineImage : null,
                   currentImage: c.currentImage,
                   diffImage: c.diffImage || null,
                 },
@@ -630,12 +646,12 @@ export async function saveRun(run: Run): Promise<Run> {
               images: {
                 upsert: {
                   create: {
-                    baselineImage: c.baselineImage || null,
+                    baselineImage: (c.baselineImage && c.baselineImage !== c.currentImage) ? c.baselineImage : null,
                     currentImage: c.currentImage,
                     diffImage: c.diffImage || null,
                   },
                   update: {
-                    baselineImage: c.baselineImage || null,
+                    baselineImage: (c.baselineImage && c.baselineImage !== c.currentImage) ? c.baselineImage : null,
                     currentImage: c.currentImage,
                     diffImage: c.diffImage || null,
                   },
@@ -684,13 +700,7 @@ export async function setProjectBaselineRun(projectId: string, runId: string): P
           data: { isBaseline: true },
         });
 
-        // Fetch the newly promoted baseline run's screenshots
-        const baselineScreenshots = await tx.screenshot.findMany({
-          where: { runId },
-          include: { imageBlob: true },
-        });
-
-        // Update the baseline run itself: baselineImage becomes currentImage, diff is 0, status is identical
+        // Fetch the newly promoted baseline run's comparisons
         const baselineComparisons = await tx.comparisonItem.findMany({
           where: { runId },
           include: { images: true },
@@ -701,7 +711,7 @@ export async function setProjectBaselineRun(projectId: string, runId: string): P
             await tx.comparisonImages.update({
               where: { comparisonId: c.id },
               data: {
-                baselineImage: c.images.currentImage,
+                baselineImage: null, // In baseline run, baseline is identical to currentImage
                 diffImage: null,
               },
             });
@@ -738,16 +748,17 @@ export async function setProjectBaselineRun(projectId: string, runId: string): P
 
         for (const r of otherRuns) {
           for (const c of r.comparisons) {
-            const match = baselineScreenshots.find(
-              (s) =>
-                (s.pageId === c.pageId || s.pagePath === c.pagePath) &&
-                (s.breakpointId === c.breakpointId || s.width === c.width)
+            const match = baselineComparisons.find(
+              (bc) =>
+                (bc.pageId === c.pageId || bc.pagePath === c.pagePath) &&
+                (bc.breakpointId === c.breakpointId || bc.width === c.width)
             );
-            if (match?.imageBlob?.imageData && c.images) {
+            const newBaselineImg = match?.images?.currentImage;
+            if (newBaselineImg && c.images) {
               await tx.comparisonImages.update({
                 where: { comparisonId: c.id },
                 data: {
-                  baselineImage: match.imageBlob.imageData,
+                  baselineImage: newBaselineImg,
                 },
               });
             }

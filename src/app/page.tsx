@@ -128,15 +128,37 @@ export default function HomePage() {
     }
   }, [fetchProjects]);
 
+  const [isLoadingRunDetail, setIsLoadingRunDetail] = useState(false);
+
+  // Fetch detailed run with comparison images
+  const fetchRunDetail = useCallback(async (projectId: string, runId: string) => {
+    setIsLoadingRunDetail(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/runs/${runId}`);
+      const data = await res.json();
+      if (data.success && data.run) {
+        setActiveRun(data.run);
+        setRuns((prev) => prev.map((r) => (r.id === runId ? { ...r, ...data.run } : r)));
+      }
+    } catch (err) {
+      console.error('Error fetching run details:', err);
+    } finally {
+      setIsLoadingRunDetail(false);
+    }
+  }, []);
+
   // Fetch runs for the active project
-  const fetchRuns = useCallback(async (projectId: string) => {
+  const fetchRuns = useCallback(async (projectId: string, preferredRunId?: string) => {
     try {
       const res = await fetch(`/api/projects/${projectId}/runs`);
       const data = await res.json();
       if (data.success && data.runs) {
         setRuns(data.runs);
         if (data.runs.length > 0) {
-          setActiveRun(data.runs[0]);
+          const targetId = preferredRunId || data.runs[0].id;
+          const targetSummary = data.runs.find((r: Run) => r.id === targetId) || data.runs[0];
+          setActiveRun(targetSummary);
+          await fetchRunDetail(projectId, targetId);
         } else {
           setActiveRun(null);
         }
@@ -144,7 +166,7 @@ export default function HomePage() {
     } catch (err) {
       console.error('Error fetching runs:', err);
     }
-  }, []);
+  }, [fetchRunDetail]);
 
   useEffect(() => {
     if (activeProject) {
@@ -170,6 +192,7 @@ export default function HomePage() {
           body: JSON.stringify({
             runId,
             pageIds: [page.id],
+            pagePaths: [page.path],
           }),
         });
 
@@ -179,7 +202,7 @@ export default function HomePage() {
         }
       }
 
-      await fetchRuns(activeProject.id);
+      await fetchRuns(activeProject.id, runId);
       await fetchProjects();
     } catch (err: unknown) {
       const error = err as Error;
@@ -289,8 +312,8 @@ export default function HomePage() {
       body: JSON.stringify(projectData),
     });
     const data = await res.json();
-    if (data.success) {
-      setProjects((prev) => [...prev, data.project]);
+    if (data.success && data.project) {
+      setProjects((prev) => [data.project, ...prev.filter((p) => p.id !== data.project.id)]);
       setActiveProject(data.project);
     } else {
       throw new Error(data.error || 'Failed to create project');
@@ -579,7 +602,12 @@ export default function HomePage() {
             </div>
 
             {/* Viewer / Grid */}
-            {viewTab === 'compare' ? (
+            {isLoadingRunDetail && (!activeRun.comparisons[0] || !activeRun.comparisons[0].currentImage) ? (
+              <div className="glass-panel rounded-2xl p-12 text-center border border-slate-800 space-y-3">
+                <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                <p className="text-xs text-slate-400">Loading high-resolution visual comparisons...</p>
+              </div>
+            ) : viewTab === 'compare' ? (
               <ComparisonViewer
                 run={activeRun}
                 pages={activeProject.pages}
@@ -638,7 +666,12 @@ export default function HomePage() {
         activeRunId={activeRun?.id || null}
         isOpen={isHistoryOpen}
         onClose={() => setIsHistoryOpen(false)}
-        onSelectRun={(run) => setActiveRun(run)}
+        onSelectRun={(run) => {
+          setActiveRun(run);
+          if (activeProject) {
+            fetchRunDetail(activeProject.id, run.id);
+          }
+        }}
         onSetAsBaseline={handleSetAsBaseline}
       />
 

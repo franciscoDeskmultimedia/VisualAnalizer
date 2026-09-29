@@ -51,8 +51,8 @@ export async function PUT(
       updatedAt: new Date().toISOString(),
     };
 
-    await saveProject(updatedProject);
-    return NextResponse.json({ success: true, project: updatedProject });
+    const savedProject = await saveProject(updatedProject);
+    return NextResponse.json({ success: true, project: savedProject });
   } catch (error: unknown) {
     const err = error as Error;
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });

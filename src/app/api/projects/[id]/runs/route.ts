@@ -14,7 +14,19 @@ export async function GET(
 ) {
   try {
     const { id } = await props.params;
-    const runs = await getRunsByProjectId(id);
+    const url = new URL(request.url);
+    const runId = url.searchParams.get('runId');
+    const includeImages = url.searchParams.get('includeImages') === 'true';
+
+    if (runId) {
+      const run = await getRunById(runId, true, false);
+      if (!run || run.projectId !== id) {
+        return NextResponse.json({ success: false, error: 'Run not found' }, { status: 404 });
+      }
+      return NextResponse.json({ success: true, run });
+    }
+
+    const runs = await getRunsByProjectId(id, includeImages);
     return NextResponse.json({ success: true, runs });
   } catch (error: unknown) {
     const err = error as Error;
@@ -34,29 +46,46 @@ export async function POST(
     }
 
     const body = await request.json().catch(() => ({}));
-    const { pageIds, breakpointIds, setAsBaseline } = body;
+    const { pageIds, breakpointIds, setAsBaseline, pagePaths } = body;
 
+    // Resilient matching for pages: exact id, suffix, or path
     const targetPages = pageIds && pageIds.length > 0
-      ? project.pages.filter((p) => pageIds.includes(p.id))
+      ? project.pages.filter((p) =>
+          pageIds.includes(p.id) ||
+          pageIds.some((pid: string) => p.id.endsWith(`_${pid}`) || pid.endsWith(`_${p.id}`) || p.id === pid) ||
+          (pagePaths && pagePaths.includes(p.path)) ||
+          pageIds.includes(p.path)
+        )
       : project.pages;
 
+    // Resilient matching for breakpoints: exact id, suffix, or name
     const targetBreakpoints = breakpointIds && breakpointIds.length > 0
-      ? project.breakpoints.filter((b) => breakpointIds.includes(b.id))
+      ? project.breakpoints.filter((b) =>
+          breakpointIds.includes(b.id) ||
+          breakpointIds.some((bid: string) => b.id.endsWith(`_${bid}`) || bid.endsWith(`_${b.id}`) || b.id === bid) ||
+          breakpointIds.some((bid: string) => b.name?.toLowerCase() === bid?.toLowerCase())
+        )
       : project.breakpoints;
 
-    if (targetPages.length === 0 || targetBreakpoints.length === 0) {
+    const finalPages = targetPages.length > 0 ? targetPages : project.pages;
+    const finalBreakpoints = targetBreakpoints.length > 0 ? targetBreakpoints : project.breakpoints;
+
+    if (finalPages.length === 0 || finalBreakpoints.length === 0) {
       return NextResponse.json(
-        { success: false, error: 'No pages or breakpoints selected to test.' },
+        { success: false, error: 'No pages or breakpoints configured in project to test.' },
         { status: 400 }
       );
     }
 
-    // Check if there is an active baseline run
-    const baselineRun = project.baselineRunId ? await getRunById(project.baselineRunId) : null;
-
     const runId = body.runId || `run_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const targetRunId = runId;
-    const existingRun = body.runId ? await getRunById(body.runId) : null;
+
+    // Check if there is an active baseline run (must not be the run currently being captured)
+    const baselineRunId =
+      project.baselineRunId && project.baselineRunId !== targetRunId ? project.baselineRunId : null;
+    const baselineRun = baselineRunId ? await getRunById(baselineRunId, true, true) : null;
+
+    const existingRun = body.runId ? await getRunById(body.runId, true, true) : null;
 
     const screenshots: Screenshot[] = existingRun ? [...existingRun.screenshots] : [];
     const comparisons: ComparisonItem[] = existingRun ? [...existingRun.comparisons] : [];
@@ -65,11 +94,11 @@ export async function POST(
     let changedChecks = existingRun ? existingRun.changedChecks : 0;
     let newChecks = existingRun ? existingRun.newChecks : 0;
 
-    for (const page of targetPages) {
+    for (const page of finalPages) {
       const pagePath = page.path.startsWith('/') ? page.path : `/${page.path}`;
       const fullUrl = `${project.baseUrl}${pagePath}`;
 
-      for (const bp of targetBreakpoints) {
+      for (const bp of finalBreakpoints) {
         try {
           // 1. Capture current screenshot
           const imageData = await captureScreenshot({
@@ -97,19 +126,28 @@ export async function POST(
           screenshots.push(screenshot);
 
           // 2. Compare against baseline if available
-          let baselineScreenshot: Screenshot | undefined;
+          let baselineImage: string | undefined;
           if (baselineRun) {
-            baselineScreenshot = baselineRun.screenshots.find(
-              (s) =>
-                (s.pageId === page.id || s.pagePath === page.path) &&
-                (s.breakpointId === bp.id || s.width === bp.width)
+            const matchCmp = baselineRun.comparisons.find(
+              (c) =>
+                (c.pageId === page.id || c.pagePath === page.path) &&
+                (c.breakpointId === bp.id || c.width === bp.width)
             );
+            baselineImage = matchCmp?.currentImage || matchCmp?.baselineImage;
+            if (!baselineImage) {
+              const matchSc = baselineRun.screenshots.find(
+                (s) =>
+                  (s.pageId === page.id || s.pagePath === page.path) &&
+                  (s.breakpointId === bp.id || s.width === bp.width)
+              );
+              baselineImage = matchSc?.imageData;
+            }
           }
 
-          if (baselineScreenshot) {
+          if (baselineImage) {
             try {
               const diffResult = compareImages(
-                baselineScreenshot.imageData,
+                baselineImage,
                 imageData,
                 {
                   threshold: project.settings.diffThreshold,
@@ -133,7 +171,7 @@ export async function POST(
                 width: bp.width,
                 height: bp.height,
                 fullUrl,
-                baselineImage: baselineScreenshot.imageData,
+                baselineImage,
                 currentImage: imageData,
                 diffImage: diffResult.diffImageBase64,
                 diffPixelCount: diffResult.diffPixelCount,
@@ -153,7 +191,7 @@ export async function POST(
                 width: bp.width,
                 height: bp.height,
                 fullUrl,
-                baselineImage: baselineScreenshot.imageData,
+                baselineImage,
                 currentImage: imageData,
                 diffPixelCount: 0,
                 totalPixelCount: bp.width * bp.height,
@@ -208,7 +246,9 @@ export async function POST(
 
     const totalChecks = comparisons.length;
     // If user explicitly requested setAsBaseline, OR if project had no baseline yet, make this run the baseline
-    const shouldBeBaseline = Boolean(setAsBaseline || !project.baselineRunId);
+    const shouldBeBaseline = Boolean(
+      setAsBaseline || !project.baselineRunId || project.baselineRunId === targetRunId
+    );
 
     const newRun: Run = {
       id: targetRunId,
@@ -228,6 +268,10 @@ export async function POST(
 
     if (shouldBeBaseline) {
       await setProjectBaselineRun(project.id, newRun.id);
+      const updatedBaseline = await getRunById(newRun.id, true, false);
+      if (updatedBaseline) {
+        return NextResponse.json({ success: true, run: updatedBaseline });
+      }
     }
 
     return NextResponse.json({ success: true, run: newRun });

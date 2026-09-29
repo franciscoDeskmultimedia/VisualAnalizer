@@ -71,9 +71,9 @@ export async function POST(request: Request) {
       updatedAt: new Date().toISOString(),
     };
 
-    await saveProject(newProject);
+    const savedProject = await saveProject(newProject);
 
-    return NextResponse.json({ success: true, project: newProject }, { status: 201 });
+    return NextResponse.json({ success: true, project: savedProject }, { status: 201 });
   } catch (error: unknown) {
     const err = error as Error;
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
