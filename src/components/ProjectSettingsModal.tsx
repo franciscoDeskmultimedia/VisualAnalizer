@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Project, Breakpoint, ProjectPage, ProjectSettings, DEFAULT_BREAKPOINTS } from '@/types';
+import { Project, Breakpoint, ProjectPage, ProjectSettings, PageComponent, ComponentState, DEFAULT_BREAKPOINTS } from '@/types';
+import { ElementPickerModal } from './ElementPickerModal';
 import {
   X,
   Monitor,
@@ -22,7 +23,10 @@ import {
   Loader2,
   Eye,
   EyeOff,
-  Sparkles
+  Sparkles,
+  Crosshair,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 interface ProjectSettingsModalProps {
@@ -48,6 +52,14 @@ export function ProjectSettingsModal({
   const [pages, setPages] = useState<ProjectPage[]>(project.pages || []);
   const [breakpoints, setBreakpoints] = useState<Breakpoint[]>(project.breakpoints || []);
   const [settings, setSettings] = useState<ProjectSettings>(project.settings);
+
+  // Component-based testing states
+  const [expandedPageId, setExpandedPageId] = useState<string | null>(null);
+  const [pickerPage, setPickerPage] = useState<{ id: string; name: string; path: string; fullUrl: string } | null>(null);
+  const [manualCompPageId, setManualCompPageId] = useState<string | null>(null);
+  const [manualCompName, setManualCompName] = useState('');
+  const [manualCompSelector, setManualCompSelector] = useState('');
+  const [manualCompStates, setManualCompStates] = useState<ComponentState[]>(['default', 'hover']);
 
   // Storage testing state
   const [isTestingS3, setIsTestingS3] = useState(false);
@@ -105,6 +117,49 @@ export function ProjectSettingsModal({
       return;
     }
     setPages(pages.filter((p) => p.id !== pageId));
+  };
+
+  // Handlers for Page Components
+  const handleAddComponentToPage = (pageId: string, comp: PageComponent) => {
+    setPages(
+      pages.map((p) => {
+        if (p.id !== pageId) return p;
+        const currentComponents = p.components || [];
+        return {
+          ...p,
+          components: [...currentComponents, comp],
+        };
+      })
+    );
+  };
+
+  const handleRemoveComponentFromPage = (pageId: string, componentId: string) => {
+    setPages(
+      pages.map((p) => {
+        if (p.id !== pageId) return p;
+        return {
+          ...p,
+          components: (p.components || []).filter((c) => c.id !== componentId),
+        };
+      })
+    );
+  };
+
+  const handleAddManualComponent = (pageId: string) => {
+    if (!manualCompName.trim() || !manualCompSelector.trim()) return;
+
+    const newComp: PageComponent = {
+      id: `comp_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
+      name: manualCompName.trim(),
+      selector: manualCompSelector.trim(),
+      states: manualCompStates,
+    };
+
+    handleAddComponentToPage(pageId, newComp);
+    setManualCompName('');
+    setManualCompSelector('');
+    setManualCompStates(['default', 'hover']);
+    setManualCompPageId(null);
   };
 
   // Handlers for Breakpoints
@@ -336,42 +391,264 @@ export function ProjectSettingsModal({
               </form>
 
               {/* List of Pages */}
-              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
                 {pages.map((p, idx) => {
                   const fullUrl = `${baseUrl}${p.path.startsWith('/') ? p.path : `/${p.path}`}`;
+                  const isExpanded = expandedPageId === p.id;
+                  const components = p.components || [];
+
                   return (
                     <div
                       key={p.id}
-                      className="flex items-center justify-between p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 hover:border-slate-700 transition-all"
+                      className={`rounded-xl border transition-all ${
+                        isExpanded
+                          ? 'bg-slate-950 border-indigo-500/50 shadow-lg shadow-indigo-950/20'
+                          : 'bg-slate-950/60 border-slate-800/80 hover:border-slate-700'
+                      }`}
                     >
-                      <div className="flex items-center gap-3">
-                        <span className="w-6 h-6 rounded-md bg-slate-900 flex items-center justify-center text-[10px] font-mono font-bold text-slate-400 border border-slate-800">
-                          {idx + 1}
-                        </span>
-                        <div>
-                          <div className="text-xs font-semibold text-white">{p.name}</div>
-                          <div className="text-[11px] font-mono text-indigo-400">{p.path}</div>
+                      {/* Page Header Row */}
+                      <div className="flex items-center justify-between p-3">
+                        <div className="flex items-center gap-3">
+                          <span className="w-6 h-6 rounded-md bg-slate-900 flex items-center justify-center text-[10px] font-mono font-bold text-slate-400 border border-slate-800">
+                            {idx + 1}
+                          </span>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold text-white">{p.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => setExpandedPageId(isExpanded ? null : p.id)}
+                                className={`text-[10px] font-medium px-2 py-0.5 rounded-full transition-colors flex items-center gap-1 ${
+                                  components.length > 0
+                                    ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                                    : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                                }`}
+                              >
+                                <Crosshair className="w-3 h-3 text-indigo-400" />
+                                <span>{components.length} {components.length === 1 ? 'component' : 'components'}</span>
+                              </button>
+                            </div>
+                            <div className="text-[11px] font-mono text-indigo-400 mt-0.5">{p.path}</div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          {/* Launch Visual Element Picker Button */}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPickerPage({
+                                id: p.id,
+                                name: p.name,
+                                path: p.path,
+                                fullUrl,
+                              })
+                            }
+                            className="px-2.5 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-[11px] font-medium flex items-center gap-1 transition-colors"
+                            title="Open Visual Point & Click Element Inspector"
+                          >
+                            <Crosshair className="w-3.5 h-3.5 text-indigo-400" />
+                            <span className="hidden sm:inline">Pick Element</span>
+                          </button>
+
+                          <a
+                            href={fullUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-300 hover:bg-slate-800 text-xs transition-colors"
+                            title="Open in new tab"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+
+                          <button
+                            type="button"
+                            onClick={() => setExpandedPageId(isExpanded ? null : p.id)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 text-xs transition-colors"
+                            title={isExpanded ? 'Collapse components' : 'Expand components'}
+                          >
+                            {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePage(p.id)}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 text-xs transition-colors"
+                            title="Remove Page"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <a
-                          href={fullUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-300 hover:bg-slate-800 text-xs transition-colors"
-                          title="Open in new tab"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </a>
-                        <button
-                          onClick={() => handleRemovePage(p.id)}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 text-xs transition-colors"
-                          title="Remove Page"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      {/* Expandable Components Tray */}
+                      {isExpanded && (
+                        <div className="px-4 pb-4 pt-2 border-t border-slate-800/80 bg-slate-900/40 space-y-3 animate-in fade-in duration-150">
+                          <div className="flex items-center justify-between">
+                            <div className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                              <span>Target Components for {p.name}</span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setPickerPage({
+                                    id: p.id,
+                                    name: p.name,
+                                    path: p.path,
+                                    fullUrl,
+                                  })
+                                }
+                                className="px-2 py-1 rounded-md text-[11px] font-medium bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1 transition-colors shadow-sm shadow-indigo-600/30"
+                              >
+                                <Crosshair className="w-3 h-3" />
+                                <span>🎯 Visual Picker</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setManualCompPageId(manualCompPageId === p.id ? null : p.id)}
+                                className="px-2 py-1 rounded-md text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center gap-1 transition-colors"
+                              >
+                                <Plus className="w-3 h-3" />
+                                <span>Manual Selector</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Manual Component Form */}
+                          {manualCompPageId === p.id && (
+                            <div className="p-3 rounded-xl bg-slate-950 border border-indigo-500/30 space-y-2.5 animate-in fade-in duration-150">
+                              <div className="text-[11px] font-semibold text-white">Add Component by CSS Selector</div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="Component Name (e.g. Header Nav)"
+                                  value={manualCompName}
+                                  onChange={(e) => setManualCompName(e.target.value)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-white focus:outline-none focus:border-indigo-500"
+                                />
+                                <input
+                                  type="text"
+                                  placeholder="CSS Selector (e.g. header nav, #cta-button)"
+                                  value={manualCompSelector}
+                                  onChange={(e) => setManualCompSelector(e.target.value)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
+                                />
+                              </div>
+
+                              <div className="flex items-center justify-between pt-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] text-slate-400 font-medium mr-1">States:</span>
+                                  {(['default', 'hover', 'active', 'focus'] as ComponentState[]).map((st) => {
+                                    const isSel = manualCompStates.includes(st);
+                                    return (
+                                      <button
+                                        key={st}
+                                        type="button"
+                                        onClick={() => {
+                                          if (st === 'default') return;
+                                          if (isSel) setManualCompStates(manualCompStates.filter((s) => s !== st));
+                                          else setManualCompStates([...manualCompStates, st]);
+                                        }}
+                                        className={`px-2 py-0.5 rounded text-[10px] font-medium transition-all ${
+                                          isSel
+                                            ? 'bg-indigo-600 text-white'
+                                            : 'bg-slate-900 text-slate-400 border border-slate-800'
+                                        }`}
+                                      >
+                                        {st === 'default' ? 'Default' : `:${st}`}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setManualCompPageId(null)}
+                                    className="px-2.5 py-1 text-slate-400 hover:text-white text-[11px]"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={!manualCompName.trim() || !manualCompSelector.trim()}
+                                    onClick={() => handleAddManualComponent(p.id)}
+                                    className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-medium rounded-lg disabled:opacity-50"
+                                  >
+                                    Add
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Components List */}
+                          {components.length === 0 ? (
+                            <div className="p-4 rounded-xl border border-dashed border-slate-800 text-center">
+                              <p className="text-xs text-slate-400">
+                                No specific components configured for this page yet.
+                              </p>
+                              <p className="text-[11px] text-slate-500 mt-0.5">
+                                Click <span className="text-indigo-400 font-semibold">Visual Picker</span> above to click and select components directly from your live website.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="space-y-1.5">
+                              {components.map((c) => (
+                                <div
+                                  key={c.id}
+                                  className="flex items-center justify-between p-2.5 rounded-lg bg-slate-950 border border-slate-800/90 text-xs"
+                                >
+                                  <div className="flex items-center gap-2.5 overflow-hidden">
+                                    <div className="p-1 rounded bg-indigo-500/10 text-indigo-400 flex-shrink-0">
+                                      <Crosshair className="w-3.5 h-3.5" />
+                                    </div>
+                                    <div className="truncate">
+                                      <span className="font-semibold text-white mr-2">{c.name}</span>
+                                      <span className="font-mono text-[11px] text-indigo-400 bg-indigo-950/40 px-1.5 py-0.5 rounded border border-indigo-500/20">
+                                        {c.selector}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                                    <div className="flex items-center gap-1">
+                                      {c.states.map((st) => (
+                                        <span
+                                          key={st}
+                                          className={`text-[9px] font-mono px-1.5 py-0.5 rounded uppercase font-semibold ${
+                                            st === 'hover'
+                                              ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                                              : st === 'active'
+                                              ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
+                                              : st === 'focus'
+                                              ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                                              : 'bg-slate-800 text-slate-300 border border-slate-700'
+                                          }`}
+                                        >
+                                          {st === 'default' ? 'default' : `:${st}`}
+                                        </span>
+                                      ))}
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveComponentFromPage(p.id, c.id)}
+                                      className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                                      title="Remove Component"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1101,6 +1378,23 @@ export function ProjectSettingsModal({
           </button>
         </div>
       </div>
+
+      {/* Interactive Visual Element Picker Modal */}
+      {pickerPage && (
+        <ElementPickerModal
+          projectId={project.id}
+          pageName={pickerPage.name}
+          pagePath={pickerPage.path}
+          fullUrl={pickerPage.fullUrl}
+          isOpen={Boolean(pickerPage)}
+          onClose={() => setPickerPage(null)}
+          onSelectComponent={(newComp) => {
+            handleAddComponentToPage(pickerPage.id, newComp);
+            setPickerPage(null);
+            setExpandedPageId(pickerPage.id);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -13,6 +13,8 @@ import {
   Layers,
   ArrowRight,
   Star,
+  Box,
+  Component,
 } from 'lucide-react';
 
 interface ComparisonGridProps {
@@ -21,7 +23,7 @@ interface ComparisonGridProps {
   breakpoints: Breakpoint[];
   isBaseline: boolean;
   onSetAsBaseline: (runId: string) => Promise<void>;
-  onSelectComparison: (pageId: string, breakpointId: string) => void;
+  onSelectComparison: (pageId: string, breakpointId: string, comparisonId?: string) => void;
 }
 
 export function ComparisonGrid({
@@ -33,8 +35,13 @@ export function ComparisonGrid({
   onSelectComparison,
 }: ComparisonGridProps) {
   const [filter, setFilter] = useState<'all' | 'changed' | 'identical' | 'new'>('all');
+  const [scopeFilter, setScopeFilter] = useState<'all' | 'pages' | 'components'>('all');
   const [selectedBreakpointFilter, setSelectedBreakpointFilter] = useState<string>('all');
   const [isPromoting, setIsPromoting] = useState(false);
+
+  const hasComponents = run.comparisons.some((c) => c.isComponent);
+  const componentCount = run.comparisons.filter((c) => c.isComponent).length;
+  const pageCount = run.comparisons.filter((c) => !c.isComponent).length;
 
   const handlePromote = async () => {
     setIsPromoting(true);
@@ -46,6 +53,8 @@ export function ComparisonGrid({
   };
 
   const filteredComparisons = run.comparisons.filter((c) => {
+    if (scopeFilter === 'pages' && c.isComponent) return false;
+    if (scopeFilter === 'components' && !c.isComponent) return false;
     if (filter === 'changed' && c.status !== 'changed') return false;
     if (filter === 'identical' && c.status !== 'identical') return false;
     if (filter === 'new' && c.status !== 'new') return false;
@@ -90,6 +99,43 @@ export function ComparisonGrid({
 
         {/* Filter Pills */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Scope filter (All vs Pages vs Components) */}
+          {hasComponents && (
+            <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs">
+              <button
+                onClick={() => setScopeFilter('all')}
+                className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+                  scopeFilter === 'all'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                All Checks ({run.comparisons.length})
+              </button>
+              <button
+                onClick={() => setScopeFilter('pages')}
+                className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+                  scopeFilter === 'pages'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Pages ({pageCount})
+              </button>
+              <button
+                onClick={() => setScopeFilter('components')}
+                className={`px-2.5 py-1 rounded-lg font-medium transition-all flex items-center gap-1 ${
+                  scopeFilter === 'components'
+                    ? 'bg-purple-600 text-white shadow-sm'
+                    : 'text-purple-400 hover:text-purple-200'
+                }`}
+              >
+                <Component className="w-3 h-3" />
+                <span>Components ({componentCount})</span>
+              </button>
+            </div>
+          )}
+
           {/* Status filter */}
           <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs">
             <button
@@ -155,31 +201,55 @@ export function ComparisonGrid({
           const isIdentical = isBaseline || c.status === 'identical';
           const isChanged = !isBaseline && c.status === 'changed';
           const isNew = !isBaseline && c.status === 'new';
+          const isComp = Boolean(c.isComponent);
 
           return (
             <div
               key={c.id}
-              onClick={() => onSelectComparison(c.pageId, c.breakpointId)}
-              className="group cursor-pointer rounded-2xl bg-slate-900/60 border border-slate-800/80 hover:border-indigo-500/50 hover:shadow-xl hover:shadow-indigo-500/10 transition-all overflow-hidden flex flex-col"
+              onClick={() => onSelectComparison(c.pageId, c.breakpointId, c.id)}
+              className={`group cursor-pointer rounded-2xl bg-slate-900/60 border ${
+                isComp
+                  ? 'border-purple-500/30 hover:border-purple-400/80 hover:shadow-purple-500/10'
+                  : 'border-slate-800/80 hover:border-indigo-500/50 hover:shadow-indigo-500/10'
+              } hover:shadow-xl transition-all overflow-hidden flex flex-col`}
             >
               {/* Card Header */}
               <div className="p-3.5 border-b border-slate-800/60 flex items-center justify-between bg-slate-950/40">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center text-indigo-400">
-                    <Icon className="w-3.5 h-3.5" />
+                <div className="flex items-center gap-2 min-w-0">
+                  <div
+                    className={`w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 ${
+                      isComp
+                        ? 'bg-purple-950/50 border-purple-800 text-purple-300'
+                        : 'bg-slate-900 border-slate-800 text-indigo-400'
+                    }`}
+                  >
+                    {isComp ? <Component className="w-3.5 h-3.5" /> : <Icon className="w-3.5 h-3.5" />}
                   </div>
-                  <div>
-                    <div className="text-xs font-bold text-white group-hover:text-indigo-300 transition-colors">
-                      {c.pageName}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span
+                        className={`text-xs font-bold transition-colors truncate ${
+                          isComp
+                            ? 'text-purple-200 group-hover:text-purple-100'
+                            : 'text-white group-hover:text-indigo-300'
+                        }`}
+                      >
+                        {isComp ? c.componentName : c.pageName}
+                      </span>
+                      {isComp && (
+                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                          :{c.componentState || 'default'}
+                        </span>
+                      )}
                     </div>
-                    <div className="text-[10px] font-mono text-slate-500 truncate max-w-[150px]">
-                      {c.pagePath} · {c.width}×{c.height}px
+                    <div className="text-[10px] font-mono text-slate-500 truncate max-w-[170px]">
+                      {isComp ? `${c.pageName} · ` : ''}{c.pagePath} · {c.width}×{c.height}px
                     </div>
                   </div>
                 </div>
 
                 {/* Diff status badge */}
-                <div>
+                <div className="shrink-0 ml-2">
                   {isBaseline ? (
                     <span className="flex items-center gap-1 text-[10px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 rounded-full">
                       <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
@@ -204,26 +274,41 @@ export function ComparisonGrid({
                 </div>
               </div>
 
-              {/* Card Image Thumbnail Preview with scroll preview on hover */}
-              <div className="relative bg-black h-48 overflow-hidden flex items-center justify-center">
+              {/* Card Image Thumbnail Preview */}
+              <div
+                className={`relative h-48 overflow-hidden flex items-center justify-center ${
+                  isComp ? 'bg-slate-950 p-3' : 'bg-black'
+                }`}
+              >
                 <img
                   src={isBaseline ? c.currentImage : (c.diffImage || c.currentImage)}
-                  alt={c.pageName}
-                  className="w-full object-cover object-top transition-transform duration-1000 ease-in-out group-hover:translate-y-[-25%]"
+                  alt={isComp ? (c.componentName || 'Component') : c.pageName}
+                  className={
+                    isComp
+                      ? 'max-h-full max-w-full object-contain drop-shadow-md rounded transition-transform group-hover:scale-105 duration-300'
+                      : 'w-full object-cover object-top transition-transform duration-1000 ease-in-out group-hover:translate-y-[-25%]'
+                  }
                 />
 
                 {/* Hover overlay hint */}
-                <div className="absolute inset-0 bg-indigo-950/60 opacity-0 group-hover:opacity-100 backdrop-blur-[2px] transition-opacity flex items-center justify-center gap-2 text-xs font-semibold text-white">
-                  <span>Inspect Full-Page Diff</span>
-                  <ArrowRight className="w-3.5 h-3.5 text-indigo-400" />
+                <div
+                  className={`absolute inset-0 opacity-0 group-hover:opacity-100 backdrop-blur-[2px] transition-opacity flex items-center justify-center gap-2 text-xs font-semibold text-white ${
+                    isComp ? 'bg-purple-950/70' : 'bg-indigo-950/60'
+                  }`}
+                >
+                  <span>{isComp ? `Inspect Component (${c.componentState || 'default'})` : 'Inspect Full-Page Diff'}</span>
+                  <ArrowRight className={`w-3.5 h-3.5 ${isComp ? 'text-purple-400' : 'text-indigo-400'}`} />
                 </div>
               </div>
 
               {/* Card Footer */}
               <div className="p-3 bg-slate-950/60 border-t border-slate-800/60 flex items-center justify-between text-[11px] text-slate-400 font-mono">
-                <span>{c.breakpointName}</span>
+                <span className="flex items-center gap-1">
+                  <Icon className="w-3 h-3 text-slate-500" />
+                  <span>{c.breakpointName}</span>
+                </span>
                 {isChanged ? (
-                  <span className="text-rose-400">
+                  <span className="text-rose-400 font-medium">
                     {c.diffPixelCount.toLocaleString()} px changed
                   </span>
                 ) : (

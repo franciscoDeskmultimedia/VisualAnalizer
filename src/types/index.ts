@@ -6,10 +6,21 @@ export interface Breakpoint {
   icon?: 'desktop' | 'tablet' | 'smartphone';
 }
 
+export type ComponentState = 'default' | 'hover' | 'active' | 'focus';
+
+export interface PageComponent {
+  id: string;
+  pageId?: string;
+  name: string;             // e.g. "Primary CTA Button", "Navigation Header"
+  selector: string;         // e.g. "button.hero-cta", "#main-nav"
+  states: ComponentState[]; // e.g. ['default', 'hover', 'active']
+}
+
 export interface ProjectPage {
   id: string;
   name: string;
   path: string;
+  components?: PageComponent[];
 }
 
 export interface User {
@@ -74,6 +85,10 @@ export interface Screenshot {
   width: number;
   height: number;
   fullUrl: string;
+  isComponent?: boolean;
+  componentId?: string;
+  componentName?: string;
+  componentState?: ComponentState;
   imageData: string; // base64 data URI (data:image/png;base64,...)
   capturedAt: string;
 }
@@ -88,6 +103,10 @@ export interface ComparisonItem {
   width: number;
   height: number;
   fullUrl: string;
+  isComponent?: boolean;
+  componentId?: string;
+  componentName?: string;
+  componentState?: ComponentState;
   baselineImage?: string; // base64 data URI
   currentImage: string;   // base64 data URI
   diffImage?: string;     // base64 data URI

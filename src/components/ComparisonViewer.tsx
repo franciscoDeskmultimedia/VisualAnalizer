@@ -20,7 +20,9 @@ import {
   ZoomOut,
   ArrowUp,
   ArrowDown,
-  Navigation
+  Navigation,
+  Component,
+  Box,
 } from 'lucide-react';
 
 interface ComparisonViewerProps {
@@ -29,6 +31,8 @@ interface ComparisonViewerProps {
   breakpoints: Breakpoint[];
   isBaseline: boolean;
   onSetAsBaseline: (runId: string) => Promise<void>;
+  selectedComparisonId?: string;
+  onSelectComparisonId?: (id: string) => void;
 }
 
 type ViewMode = 'slider' | 'side-by-side' | 'diff' | 'onion-skin';
@@ -39,14 +43,35 @@ export function ComparisonViewer({
   breakpoints,
   isBaseline,
   onSetAsBaseline,
+  selectedComparisonId,
+  onSelectComparisonId,
 }: ComparisonViewerProps) {
+  // Active Comparison state
+  const [activeComparisonId, setActiveComparisonId] = useState<string>(
+    selectedComparisonId || run.comparisons[0]?.id || ''
+  );
+
+  const initialComp = run.comparisons.find((c) => c.id === activeComparisonId) || run.comparisons[0];
+
   // Navigation state
   const [selectedPageId, setSelectedPageId] = useState<string>(
-    pages[0]?.id || run.comparisons[0]?.pageId || ''
+    initialComp?.pageId || pages[0]?.id || ''
   );
   const [selectedBreakpointId, setSelectedBreakpointId] = useState<string>(
-    breakpoints[0]?.id || run.comparisons[0]?.breakpointId || ''
+    initialComp?.breakpointId || breakpoints[0]?.id || ''
   );
+
+  // Sync when selectedComparisonId prop changes
+  useEffect(() => {
+    if (selectedComparisonId) {
+      setActiveComparisonId(selectedComparisonId);
+      const match = run.comparisons.find((c) => c.id === selectedComparisonId);
+      if (match) {
+        setSelectedPageId(match.pageId);
+        setSelectedBreakpointId(match.breakpointId);
+      }
+    }
+  }, [selectedComparisonId, run.comparisons]);
 
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>('slider');
@@ -67,24 +92,56 @@ export function ComparisonViewer({
   // Reset handle position when switching comparison
   useEffect(() => {
     setHandleY(null);
-  }, [selectedPageId, selectedBreakpointId]);
-
-  // Ensure selection remains valid if pages or breakpoints change
-  useEffect(() => {
-    if (pages.length > 0 && !pages.some((p) => p.id === selectedPageId)) {
-      setSelectedPageId(pages[0].id);
-    }
-    if (breakpoints.length > 0 && !breakpoints.some((b) => b.id === selectedBreakpointId)) {
-      setSelectedBreakpointId(breakpoints[0].id);
-    }
-  }, [pages, breakpoints, selectedPageId, selectedBreakpointId]);
+  }, [activeComparisonId, selectedPageId, selectedBreakpointId]);
 
   // Find active comparison item
-  const currentComparison = run.comparisons.find(
+  const currentComparison =
+    run.comparisons.find((c) => c.id === activeComparisonId) ||
+    run.comparisons.find(
+      (c) =>
+        (c.pageId === selectedPageId || (!selectedPageId && c.pagePath === pages[0]?.path)) &&
+        (c.breakpointId === selectedBreakpointId || (!selectedBreakpointId && c.width === breakpoints[0]?.width))
+    ) ||
+    run.comparisons[0];
+
+  const handleSelectPage = (pageId: string) => {
+    setSelectedPageId(pageId);
+    const nextCheck =
+      run.comparisons.find((c) => c.pageId === pageId && c.breakpointId === selectedBreakpointId) ||
+      run.comparisons.find((c) => c.pageId === pageId);
+    if (nextCheck) {
+      setActiveComparisonId(nextCheck.id);
+      setSelectedBreakpointId(nextCheck.breakpointId);
+      onSelectComparisonId?.(nextCheck.id);
+    }
+  };
+
+  const handleSelectBreakpoint = (bpId: string) => {
+    setSelectedBreakpointId(bpId);
+    const currentIsComp = currentComparison?.isComponent;
+    const currentCompId = currentComparison?.componentId;
+    const currentState = currentComparison?.componentState;
+
+    let nextCheck = run.comparisons.find(
+      (c) =>
+        c.pageId === selectedPageId &&
+        c.breakpointId === bpId &&
+        (currentIsComp ? c.componentId === currentCompId && c.componentState === currentState : !c.isComponent)
+    );
+    if (!nextCheck) {
+      nextCheck = run.comparisons.find((c) => c.pageId === selectedPageId && c.breakpointId === bpId);
+    }
+    if (nextCheck) {
+      setActiveComparisonId(nextCheck.id);
+      onSelectComparisonId?.(nextCheck.id);
+    }
+  };
+
+  const checksForCurrentPageAndBp = run.comparisons.filter(
     (c) =>
-      (c.pageId === selectedPageId || (!selectedPageId && c.pagePath === pages[0]?.path)) &&
-      (c.breakpointId === selectedBreakpointId || (!selectedBreakpointId && c.width === breakpoints[0]?.width))
-  ) || run.comparisons[0];
+      c.pageId === (currentComparison?.pageId || selectedPageId) &&
+      c.breakpointId === (currentComparison?.breakpointId || selectedBreakpointId)
+  );
 
   // Dragging logic for the 2-Up split slider
   const handleSliderMove = useCallback((clientX: number) => {
@@ -257,7 +314,7 @@ export function ComparisonViewer({
             </span>
             <select
               value={selectedPageId}
-              onChange={(e) => setSelectedPageId(e.target.value)}
+              onChange={(e) => handleSelectPage(e.target.value)}
               className="bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-1.5 text-xs font-medium text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
             >
               {pages.map((p) => (
@@ -279,14 +336,19 @@ export function ComparisonViewer({
 
               const isSelected = selectedBreakpointId === bp.id;
 
-              const item = run.comparisons.find(
-                (c) => c.pageId === selectedPageId && c.breakpointId === bp.id
-              );
+              const item =
+                run.comparisons.find(
+                  (c) =>
+                    c.pageId === selectedPageId &&
+                    c.breakpointId === bp.id &&
+                    (currentComparison.isComponent ? c.componentId === currentComparison.componentId : !c.isComponent)
+                ) ||
+                run.comparisons.find((c) => c.pageId === selectedPageId && c.breakpointId === bp.id);
 
               return (
                 <button
                   key={bp.id}
-                  onClick={() => setSelectedBreakpointId(bp.id)}
+                  onClick={() => handleSelectBreakpoint(bp.id)}
                   className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all ${
                     isSelected
                       ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
@@ -312,6 +374,34 @@ export function ComparisonViewer({
               );
             })}
           </div>
+
+          {/* Target Check Dropdown (Full Page vs Component States) */}
+          {checksForCurrentPageAndBp.length > 1 && (
+            <>
+              <div className="h-5 w-px bg-slate-800 hidden sm:block" />
+              <div className="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
+                <span className="text-xs font-semibold text-slate-400 pl-2 hidden sm:inline">
+                  Target:
+                </span>
+                <select
+                  value={currentComparison.id}
+                  onChange={(e) => {
+                    setActiveComparisonId(e.target.value);
+                    onSelectComparisonId?.(e.target.value);
+                  }}
+                  className="bg-slate-950 border border-purple-500/40 text-purple-200 font-semibold rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-purple-400 cursor-pointer"
+                >
+                  {checksForCurrentPageAndBp.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.isComponent
+                        ? `🧩 ${c.componentName} (:${c.componentState || 'default'})`
+                        : '📄 Full Page View'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Right: View Mode Toggle & Actions */}
@@ -476,10 +566,22 @@ export function ComparisonViewer({
             </div>
           ) : null}
 
+          {currentComparison.isComponent && (
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/40 font-bold">
+              <Component className="w-3.5 h-3.5" />
+              <span>Component: {currentComparison.componentName}</span>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-900/60 text-purple-200 border border-purple-400/30">
+                :{currentComparison.componentState || 'default'}
+              </span>
+            </div>
+          )}
+
           <div className="text-slate-400 hidden sm:flex items-center gap-2">
-            <span>Viewport:</span>
+            <span>Scope:</span>
             <span className="font-mono text-slate-300">
-              {currentComparison.width}px · Full Scrollable Page
+              {currentComparison.isComponent
+                ? `Component Box (${currentComparison.width}×${currentComparison.height}px)`
+                : `${currentComparison.width}px · Full Scrollable Page`}
             </span>
           </div>
         </div>
@@ -580,7 +682,9 @@ export function ComparisonViewer({
       >
         <div
           style={{
-            width: `${Math.min(currentComparison.width * zoomLevel, 1400)}px`,
+            width: currentComparison.isComponent
+              ? `${Math.max(340, Math.min(currentComparison.width * zoomLevel * 1.5, 1100))}px`
+              : `${Math.min(currentComparison.width * zoomLevel, 1400)}px`,
             maxWidth: '100%',
             transition: 'width 0.15s ease-out',
           }}
@@ -596,11 +700,11 @@ export function ComparisonViewer({
               {/* Floating Top Labels (absolute so they introduce zero layout shift/offset) */}
               <div className="absolute top-3 left-3 right-3 z-30 flex justify-between pointer-events-none">
                 <div className="bg-slate-950/90 backdrop-blur-md border border-slate-700/80 px-2.5 py-1 rounded-md text-[11px] font-mono text-emerald-400 font-bold shadow-lg">
-                  ◀ BASELINE {isBaseline ? '(GOLDEN REFERENCE)' : '(ORIGINAL)'}
+                  ◀ BASELINE {currentComparison.isComponent ? `(:${currentComparison.componentState || 'default'})` : isBaseline ? '(GOLDEN REFERENCE)' : '(ORIGINAL)'}
                 </div>
                 {hasBaseline && (
                   <div className="bg-slate-950/90 backdrop-blur-md border border-slate-700/80 px-2.5 py-1 rounded-md text-[11px] font-mono text-indigo-400 font-bold shadow-lg">
-                    {isBaseline ? 'CURRENT (MATCHES BASELINE) ▶' : 'CURRENT CHECK ▶'}
+                    {currentComparison.isComponent ? `CURRENT (:${currentComparison.componentState || 'default'}) ▶` : isBaseline ? 'CURRENT (MATCHES BASELINE) ▶' : 'CURRENT CHECK ▶'}
                   </div>
                 )}
               </div>

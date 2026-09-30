@@ -55,12 +55,13 @@ model ProjectMember {
 }
 
 model ProjectPage {
-  id        String  @id @default(cuid())
-  projectId String
-  name      String
-  path      String
-  order     Int     @default(0)
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id         String  @id @default(cuid())
+  projectId  String
+  name       String
+  path       String
+  order      Int     @default(0)
+  components Json?
+  project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
 }
@@ -107,6 +108,10 @@ model Screenshot {
   width          Int
   height         Int
   fullUrl        String
+  isComponent    Boolean          @default(false)
+  componentId    String?
+  componentName  String?
+  componentState String?
   capturedAt     DateTime         @default(now())
   run            Run              @relation(fields: [runId], references: [id], onDelete: Cascade)
   imageBlob      ScreenshotImage?
@@ -132,6 +137,10 @@ model ComparisonItem {
   width           Int
   height          Int
   fullUrl         String
+  isComponent     Boolean           @default(false)
+  componentId     String?
+  componentName   String?
+  componentState  String?
   diffPixelCount  Int               @default(0)
   totalPixelCount Int               @default(0)
   diffPercentage  Float             @default(0)

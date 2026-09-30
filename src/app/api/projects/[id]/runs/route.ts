@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getProjectById, getRunsByProjectId, getRunById, saveRun, setProjectBaselineRun } from '@/lib/storage';
-import { captureScreenshot } from '@/lib/screenshot';
+import { captureScreenshot, captureMultipleComponentStates } from '@/lib/screenshot';
 import { compareImagesAsync } from '@/lib/diff';
 import { processRunImage } from '@/lib/image-processing';
 import { uploadRunImage } from '@/lib/storage-provider';
@@ -270,6 +270,177 @@ export async function POST(
             status: 'error',
             errorMessage: cErr.message,
           });
+        }
+      }
+
+      // 4. Capture & compare component targets for this page (if configured)
+      if (page.components && page.components.length > 0) {
+        for (const comp of page.components) {
+          for (const bp of finalBreakpoints) {
+            try {
+              const compStates = (comp.states && comp.states.length > 0)
+                ? (comp.states as ('default' | 'hover' | 'active' | 'focus')[])
+                : (['default'] as ('default' | 'hover' | 'active' | 'focus')[]);
+              const stateCaptures = await captureMultipleComponentStates({
+                url: fullUrl,
+                width: bp.width,
+                height: bp.height,
+                selector: comp.selector,
+                states: compStates,
+                waitTimeMs: project.settings?.waitTimeMs,
+              });
+
+              for (const stateCap of stateCaptures) {
+                const targetFormat = project.settings?.imageFormat || 'webp';
+                const targetQuality = project.settings?.imageQuality || 80;
+
+                const processedCap = await processRunImage(stateCap.imageData, targetFormat, targetQuality);
+                const compImageUrl = await uploadRunImage({
+                  projectId: id,
+                  runId: targetRunId,
+                  filename: `${page.id}_${comp.id}_${stateCap.state}_${bp.id}.${targetFormat}`,
+                  buffer: processedCap.buffer,
+                  mimeType: processedCap.mimeType,
+                  settings: project.settings,
+                });
+
+                const compScId = `sc_${comp.id}_${stateCap.state}_${bp.id}_${Date.now()}`;
+                screenshots.push({
+                  id: compScId,
+                  pageId: page.id,
+                  pageName: page.name,
+                  pagePath: page.path,
+                  breakpointId: bp.id,
+                  breakpointName: bp.name,
+                  width: stateCap.width,
+                  height: stateCap.height,
+                  fullUrl,
+                  isComponent: true,
+                  componentId: comp.id,
+                  componentName: comp.name,
+                  componentState: stateCap.state,
+                  imageData: compImageUrl,
+                  capturedAt: new Date().toISOString(),
+                });
+
+                // Compare against baseline component check
+                let baselineCompImage: string | undefined;
+                if (baselineRun) {
+                  const matchCompCmp = baselineRun.comparisons.find(
+                    (c) =>
+                      c.isComponent &&
+                      (c.componentId === comp.id || c.componentName === comp.name) &&
+                      c.componentState === stateCap.state &&
+                      (c.breakpointId === bp.id || c.width === stateCap.width)
+                  );
+                  baselineCompImage = matchCompCmp?.currentImage || matchCompCmp?.baselineImage;
+                }
+
+                if (baselineCompImage) {
+                  try {
+                    const diffResult = await compareImagesAsync(
+                      baselineCompImage,
+                      stateCap.imageData,
+                      { threshold: project.settings?.diffThreshold }
+                    );
+
+                    const isIdentical = diffResult.isIdentical || diffResult.diffPercentage === 0;
+                    if (isIdentical) {
+                      passedChecks++;
+                    } else {
+                      changedChecks++;
+                    }
+
+                    let diffImageUrl: string | undefined;
+                    if (!isIdentical) {
+                      const processedDiff = await processRunImage(diffResult.diffImageBase64, targetFormat, targetQuality);
+                      diffImageUrl = await uploadRunImage({
+                        projectId: id,
+                        runId: targetRunId,
+                        filename: `${page.id}_${comp.id}_${stateCap.state}_${bp.id}_diff.${targetFormat}`,
+                        buffer: processedDiff.buffer,
+                        mimeType: processedDiff.mimeType,
+                        settings: project.settings,
+                      });
+                    }
+
+                    comparisons.push({
+                      id: `cmp_${compScId}`,
+                      pageId: page.id,
+                      pageName: page.name,
+                      pagePath: page.path,
+                      breakpointId: bp.id,
+                      breakpointName: bp.name,
+                      width: stateCap.width,
+                      height: stateCap.height,
+                      fullUrl,
+                      isComponent: true,
+                      componentId: comp.id,
+                      componentName: comp.name,
+                      componentState: stateCap.state,
+                      baselineImage: baselineCompImage,
+                      currentImage: compImageUrl,
+                      diffImage: diffImageUrl,
+                      diffPixelCount: diffResult.diffPixelCount,
+                      totalPixelCount: diffResult.totalPixelCount,
+                      diffPercentage: diffResult.diffPercentage,
+                      status: isIdentical ? 'identical' : 'changed',
+                    });
+                  } catch (diffErr: unknown) {
+                    const dErr = diffErr as Error;
+                    comparisons.push({
+                      id: `cmp_${compScId}`,
+                      pageId: page.id,
+                      pageName: page.name,
+                      pagePath: page.path,
+                      breakpointId: bp.id,
+                      breakpointName: bp.name,
+                      width: stateCap.width,
+                      height: stateCap.height,
+                      fullUrl,
+                      isComponent: true,
+                      componentId: comp.id,
+                      componentName: comp.name,
+                      componentState: stateCap.state,
+                      baselineImage: baselineCompImage,
+                      currentImage: compImageUrl,
+                      diffPixelCount: 0,
+                      totalPixelCount: stateCap.width * stateCap.height,
+                      diffPercentage: 0,
+                      status: 'error',
+                      errorMessage: `Component diff comparison failed: ${dErr.message}`,
+                    });
+                  }
+                } else {
+                  // New component state check
+                  newChecks++;
+                  comparisons.push({
+                    id: `cmp_${compScId}`,
+                    pageId: page.id,
+                    pageName: page.name,
+                    pagePath: page.path,
+                    breakpointId: bp.id,
+                    breakpointName: bp.name,
+                    width: stateCap.width,
+                    height: stateCap.height,
+                    fullUrl,
+                    isComponent: true,
+                    componentId: comp.id,
+                    componentName: comp.name,
+                    componentState: stateCap.state,
+                    currentImage: compImageUrl,
+                    diffPixelCount: 0,
+                    totalPixelCount: stateCap.width * stateCap.height,
+                    diffPercentage: 0,
+                    status: 'new',
+                  });
+                }
+              }
+            } catch (compErr: unknown) {
+              const err = compErr as Error;
+              console.warn(`Failed to capture component "${comp.name}" (${comp.selector}) at ${bp.name}:`, err.message);
+            }
+          }
         }
       }
     }

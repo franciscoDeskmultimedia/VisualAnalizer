@@ -58,6 +58,7 @@ export default function HomePage() {
 
   // View state tab: Deep Comparison vs Overview Grid
   const [viewTab, setViewTab] = useState<'compare' | 'grid'>('compare');
+  const [selectedComparisonId, setSelectedComparisonId] = useState<string | undefined>();
 
   // Fetch current user
   const fetchCurrentUser = useCallback(async () => {
@@ -614,6 +615,8 @@ export default function HomePage() {
                 breakpoints={activeProject.breakpoints}
                 isBaseline={isCurrentRunBaseline}
                 onSetAsBaseline={handleSetAsBaseline}
+                selectedComparisonId={selectedComparisonId}
+                onSelectComparisonId={setSelectedComparisonId}
               />
             ) : (
               <ComparisonGrid
@@ -622,7 +625,10 @@ export default function HomePage() {
                 breakpoints={activeProject.breakpoints}
                 isBaseline={isCurrentRunBaseline}
                 onSetAsBaseline={handleSetAsBaseline}
-                onSelectComparison={(pageId, breakpointId) => {
+                onSelectComparison={(pageId, breakpointId, comparisonId) => {
+                  if (comparisonId) {
+                    setSelectedComparisonId(comparisonId);
+                  }
                   setViewTab('compare');
                 }}
               />
