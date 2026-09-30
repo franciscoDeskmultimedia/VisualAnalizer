@@ -14,7 +14,15 @@ import {
   Layers,
   Sliders,
   ExternalLink,
-  AlertCircle
+  AlertCircle,
+  HardDrive,
+  Cloud,
+  Database,
+  CheckCircle2,
+  Loader2,
+  Eye,
+  EyeOff,
+  Sparkles
 } from 'lucide-react';
 
 interface ProjectSettingsModalProps {
@@ -32,7 +40,7 @@ export function ProjectSettingsModal({
   onSave,
   onDelete,
 }: ProjectSettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<'general' | 'pages' | 'breakpoints' | 'settings'>('pages');
+  const [activeTab, setActiveTab] = useState<'general' | 'pages' | 'breakpoints' | 'settings' | 'storage'>('pages');
 
   // Local form state
   const [name, setName] = useState(project.name);
@@ -40,6 +48,11 @@ export function ProjectSettingsModal({
   const [pages, setPages] = useState<ProjectPage[]>(project.pages || []);
   const [breakpoints, setBreakpoints] = useState<Breakpoint[]>(project.breakpoints || []);
   const [settings, setSettings] = useState<ProjectSettings>(project.settings);
+
+  // Storage testing state
+  const [isTestingS3, setIsTestingS3] = useState(false);
+  const [s3TestStatus, setS3TestStatus] = useState<{ success?: boolean; message?: string; error?: string } | null>(null);
+  const [showSecretKey, setShowSecretKey] = useState(false);
 
   // New page form state
   const [newPageName, setNewPageName] = useState('');
@@ -130,6 +143,37 @@ export function ProjectSettingsModal({
       icon,
     };
     setBreakpoints([...breakpoints, newBp]);
+  };
+
+  const handleTestS3 = async () => {
+    if (!settings.s3Config?.bucket || !settings.s3Config?.accessKeyId || !settings.s3Config?.secretAccessKey) {
+      setS3TestStatus({
+        success: false,
+        error: 'Please enter a Bucket Name, Access Key ID, and Secret Access Key before testing.',
+      });
+      return;
+    }
+
+    setIsTestingS3(true);
+    setS3TestStatus(null);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/storage/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ s3Config: settings.s3Config }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setS3TestStatus({ success: true, message: data.message });
+      } else {
+        setS3TestStatus({ success: false, error: data.error || 'Connection failed.' });
+      }
+    } catch (err: unknown) {
+      const error = err as Error;
+      setS3TestStatus({ success: false, error: error.message || 'Network request failed.' });
+    } finally {
+      setIsTestingS3(false);
+    }
   };
 
   const handleSaveAll = async () => {
@@ -229,6 +273,17 @@ export function ProjectSettingsModal({
           >
             <Clock className="w-4 h-4" />
             <span>Diff & Capture</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('storage')}
+            className={`py-3 px-4 text-xs font-semibold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 ${
+              activeTab === 'storage'
+                ? 'border-indigo-500 text-indigo-400'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Cloud className="w-4 h-4" />
+            <span>Storage & Retention</span>
           </button>
         </div>
 
@@ -590,6 +645,437 @@ export function ProjectSettingsModal({
                   />
                   <div className="w-10 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
                 </label>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: Storage & Retention */}
+          {activeTab === 'storage' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              {/* Storage Destination Selector */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-200 uppercase tracking-wider">
+                    Screenshot Storage Provider
+                  </label>
+                  <span className="text-[11px] text-slate-400">Where test screenshots and diffs are saved</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* Option 1: Database (Default) */}
+                  <div
+                    onClick={() => setSettings({ ...settings, storageProvider: 'database' })}
+                    className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                      (settings.storageProvider || 'database') === 'database'
+                        ? 'bg-indigo-950/30 border-indigo-500/80 shadow-lg shadow-indigo-950/40 ring-1 ring-indigo-500/50'
+                        : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                          <Database className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-semibold text-white">PostgreSQL Database</div>
+                          <div className="text-[11px] text-indigo-300 font-medium">Built-in (Zero Setup)</div>
+                        </div>
+                      </div>
+                      <div
+                        className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                          (settings.storageProvider || 'database') === 'database'
+                            ? 'border-indigo-500 bg-indigo-500 text-white'
+                            : 'border-slate-700'
+                        }`}
+                      >
+                        {(settings.storageProvider || 'database') === 'database' && (
+                          <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-3 leading-relaxed">
+                      Screenshots are compressed via WebP and stored directly inside your PostgreSQL database. Best for rapid local dev or small teams.
+                    </p>
+                  </div>
+
+                  {/* Option 2: Custom S3 / R2 (BYOS) */}
+                  <div
+                    onClick={() => setSettings({ ...settings, storageProvider: 's3' })}
+                    className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                      settings.storageProvider === 's3'
+                        ? 'bg-indigo-950/30 border-indigo-500/80 shadow-lg shadow-indigo-950/40 ring-1 ring-indigo-500/50'
+                        : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          <Cloud className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-semibold text-white">Custom Cloud Storage (BYOS)</div>
+                          <div className="text-[11px] text-emerald-300 font-medium">S3 / Cloudflare R2 / MinIO</div>
+                        </div>
+                      </div>
+                      <div
+                        className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                          settings.storageProvider === 's3'
+                            ? 'border-indigo-500 bg-indigo-500 text-white'
+                            : 'border-slate-700'
+                        }`}
+                      >
+                        {settings.storageProvider === 's3' && (
+                          <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-3 leading-relaxed">
+                      Connect your own S3 bucket. Images are stored in your cloud with zero platform capacity limits. Postgres only stores small image URLs.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* S3 Configuration Details (Shown only when S3 selected) */}
+              {settings.storageProvider === 's3' && (
+                <div className="p-5 rounded-2xl bg-slate-950 border border-indigo-500/30 space-y-4 animate-in fade-in duration-200">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                    <div>
+                      <h4 className="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>S3-Compatible Bucket Settings</span>
+                      </h4>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Works with AWS S3, Cloudflare R2, Supabase Storage, MinIO, Wasabi, or Backblaze B2.
+                      </p>
+                    </div>
+
+                    {/* Quick Preset Buttons */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-slate-500 uppercase tracking-wider mr-1">Presets:</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSettings({
+                            ...settings,
+                            s3Config: {
+                              bucket: settings.s3Config?.bucket || '',
+                              region: 'us-east-1',
+                              accessKeyId: settings.s3Config?.accessKeyId || '',
+                              secretAccessKey: settings.s3Config?.secretAccessKey || '',
+                              endpoint: '',
+                              publicUrlPrefix: settings.s3Config?.publicUrlPrefix || '',
+                            },
+                          })
+                        }
+                        className="px-2 py-1 rounded-md text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+                      >
+                        AWS S3
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSettings({
+                            ...settings,
+                            s3Config: {
+                              bucket: settings.s3Config?.bucket || '',
+                              region: 'auto',
+                              accessKeyId: settings.s3Config?.accessKeyId || '',
+                              secretAccessKey: settings.s3Config?.secretAccessKey || '',
+                              endpoint: 'https://<account-id>.r2.cloudflarestorage.com',
+                              publicUrlPrefix: 'https://pub-<id>.r2.dev',
+                            },
+                          })
+                        }
+                        className="px-2 py-1 rounded-md text-[10px] bg-slate-800 hover:bg-slate-700 text-amber-300 transition-colors"
+                      >
+                        Cloudflare R2
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSettings({
+                            ...settings,
+                            s3Config: {
+                              bucket: settings.s3Config?.bucket || '',
+                              region: 'us-east-1',
+                              accessKeyId: settings.s3Config?.accessKeyId || '',
+                              secretAccessKey: settings.s3Config?.secretAccessKey || '',
+                              endpoint: 'https://<project-ref>.supabase.co/storage/v1/s3',
+                              publicUrlPrefix: '',
+                            },
+                          })
+                        }
+                        className="px-2 py-1 rounded-md text-[10px] bg-slate-800 hover:bg-slate-700 text-emerald-300 transition-colors"
+                      >
+                        Supabase
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-300 mb-1">
+                        Bucket Name <span className="text-rose-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="my-regression-screenshots"
+                        value={settings.s3Config?.bucket || ''}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            s3Config: {
+                              ...(settings.s3Config || { region: 'us-east-1', accessKeyId: '', secretAccessKey: '' }),
+                              bucket: e.target.value,
+                            },
+                          })
+                        }
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-300 mb-1">
+                        Region <span className="text-rose-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="us-east-1 (or 'auto' for R2)"
+                        value={settings.s3Config?.region || ''}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            s3Config: {
+                              ...(settings.s3Config || { bucket: '', accessKeyId: '', secretAccessKey: '' }),
+                              region: e.target.value,
+                            },
+                          })
+                        }
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-medium text-slate-300 mb-1">
+                        Custom Endpoint URL <span className="text-slate-500 font-normal">(Optional for AWS; Required for R2/MinIO/Supabase)</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="https://<account-id>.r2.cloudflarestorage.com"
+                        value={settings.s3Config?.endpoint || ''}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            s3Config: {
+                              ...(settings.s3Config || { bucket: '', region: 'us-east-1', accessKeyId: '', secretAccessKey: '' }),
+                              endpoint: e.target.value,
+                            },
+                          })
+                        }
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white font-mono focus:outline-none focus:border-indigo-500 transition-colors"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-300 mb-1">
+                        Access Key ID <span className="text-rose-400">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="AKIAIOSFODNN7EXAMPLE"
+                        value={settings.s3Config?.accessKeyId || ''}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            s3Config: {
+                              ...(settings.s3Config || { bucket: '', region: 'us-east-1', secretAccessKey: '' }),
+                              accessKeyId: e.target.value,
+                            },
+                          })
+                        }
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white font-mono focus:outline-none focus:border-indigo-500 transition-colors"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-medium text-slate-300">
+                          Secret Access Key <span className="text-rose-400">*</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setShowSecretKey(!showSecretKey)}
+                          className="text-[10px] text-slate-400 hover:text-slate-200 flex items-center gap-1"
+                        >
+                          {showSecretKey ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                          <span>{showSecretKey ? 'Hide' : 'Show'}</span>
+                        </button>
+                      </div>
+                      <input
+                        type={showSecretKey ? 'text' : 'password'}
+                        placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+                        value={settings.s3Config?.secretAccessKey || ''}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            s3Config: {
+                              ...(settings.s3Config || { bucket: '', region: 'us-east-1', accessKeyId: '' }),
+                              secretAccessKey: e.target.value,
+                            },
+                          })
+                        }
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white font-mono focus:outline-none focus:border-indigo-500 transition-colors"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-xs font-medium text-slate-300 mb-1">
+                        Public CDN / Domain Prefix <span className="text-slate-500 font-normal">(Optional, e.g. https://pub-xxxx.r2.dev or https://cdn.mysite.com)</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="https://pub-your-id.r2.dev"
+                        value={settings.s3Config?.publicUrlPrefix || ''}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            s3Config: {
+                              ...(settings.s3Config || { bucket: '', region: 'us-east-1', accessKeyId: '', secretAccessKey: '' }),
+                              publicUrlPrefix: e.target.value,
+                            },
+                          })
+                        }
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white font-mono focus:outline-none focus:border-indigo-500 transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Test Connection Button & Status */}
+                  <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={handleTestS3}
+                      disabled={isTestingS3}
+                      className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-medium text-xs flex items-center gap-2 transition-all disabled:opacity-50 border border-slate-700 self-start"
+                    >
+                      {isTestingS3 ? <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" /> : <HardDrive className="w-3.5 h-3.5 text-indigo-400" />}
+                      <span>{isTestingS3 ? 'Testing Bucket Connection...' : 'Test Bucket Write Permission'}</span>
+                    </button>
+
+                    {s3TestStatus && (
+                      <div
+                        className={`text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 ${
+                          s3TestStatus.success
+                            ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30'
+                            : 'bg-rose-500/10 text-rose-300 border border-rose-500/30'
+                        }`}
+                      >
+                        {s3TestStatus.success ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                        ) : (
+                          <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                        )}
+                        <span className="truncate max-w-sm">{s3TestStatus.success ? s3TestStatus.message : s3TestStatus.error}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Automated Run Retention Policy */}
+              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-semibold text-slate-200 uppercase tracking-wider">
+                      Automated Run Retention Policy
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      Frees disk space by automatically pruning older test runs while preserving the active baseline.
+                    </div>
+                  </div>
+                  <span className="text-xs font-mono text-indigo-400 font-semibold px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/20">
+                    Keep last {settings.retentionRunsCount ?? 15} runs
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  {[5, 10, 15, 25, 50].map((count) => (
+                    <button
+                      key={count}
+                      type="button"
+                      onClick={() => setSettings({ ...settings, retentionRunsCount: count })}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                        (settings.retentionRunsCount ?? 15) === count
+                          ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
+                          : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
+                      }`}
+                    >
+                      {count} runs
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Image Compression & Format Settings */}
+              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-semibold text-slate-200 uppercase tracking-wider">
+                      Screenshot Compression & Format
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      WebP reduces disk usage by 75-85% compared to lossless PNG without affecting diff precision.
+                    </div>
+                  </div>
+                  <div className="flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setSettings({ ...settings, imageFormat: 'webp' })}
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${
+                        (settings.imageFormat || 'webp') === 'webp'
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      WebP (Recommended)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSettings({ ...settings, imageFormat: 'png' })}
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${
+                        settings.imageFormat === 'png'
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Lossless PNG
+                    </button>
+                  </div>
+                </div>
+
+                {(settings.imageFormat || 'webp') === 'webp' && (
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-300">Compression Quality</span>
+                      <span className="font-mono text-indigo-400 font-semibold">{settings.imageQuality ?? 80}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="50"
+                      max="100"
+                      step="5"
+                      value={settings.imageQuality ?? 80}
+                      onChange={(e) => setSettings({ ...settings, imageQuality: Number(e.target.value) })}
+                      className="w-full accent-indigo-500 cursor-pointer"
+                    />
+                    <div className="flex justify-between text-[10px] text-slate-500">
+                      <span>50% (Maximum Compression)</span>
+                      <span>80% (Optimal Balance)</span>
+                      <span>100% (Near Lossless)</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

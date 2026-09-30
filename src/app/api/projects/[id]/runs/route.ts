@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getProjectById, getRunsByProjectId, getRunById, saveRun, setProjectBaselineRun } from '@/lib/storage';
 import { captureScreenshot } from '@/lib/screenshot';
-import { compareImages } from '@/lib/diff';
+import { compareImagesAsync } from '@/lib/diff';
+import { processRunImage } from '@/lib/image-processing';
+import { uploadRunImage } from '@/lib/storage-provider';
 import { Run, Screenshot, ComparisonItem } from '@/types';
 
 // Vercel serverless function execution timeout up to 60 seconds
@@ -101,12 +103,26 @@ export async function POST(
       for (const bp of finalBreakpoints) {
         try {
           // 1. Capture current screenshot
-          const imageData = await captureScreenshot({
+          const rawImageData = await captureScreenshot({
             url: fullUrl,
             width: bp.width,
             height: bp.height,
             waitTimeMs: project.settings.waitTimeMs,
             fullPage: project.settings.fullPage,
+          });
+
+          const targetFormat = project.settings?.imageFormat || 'webp';
+          const targetQuality = project.settings?.imageQuality || 80;
+
+          // 2. Compress and upload/store current screenshot
+          const processedCurrent = await processRunImage(rawImageData, targetFormat, targetQuality);
+          const currentImageUrl = await uploadRunImage({
+            projectId: id,
+            runId: targetRunId,
+            filename: `${page.id}_${bp.id}_current.${targetFormat}`,
+            buffer: processedCurrent.buffer,
+            mimeType: processedCurrent.mimeType,
+            settings: project.settings,
           });
 
           const screenshotId = `sc_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
@@ -120,12 +136,12 @@ export async function POST(
             width: bp.width,
             height: bp.height,
             fullUrl,
-            imageData,
+            imageData: currentImageUrl,
             capturedAt: new Date().toISOString(),
           };
           screenshots.push(screenshot);
 
-          // 2. Compare against baseline if available
+          // 3. Compare against baseline if available
           let baselineImage: string | undefined;
           if (baselineRun) {
             const matchCmp = baselineRun.comparisons.find(
@@ -146,9 +162,9 @@ export async function POST(
 
           if (baselineImage) {
             try {
-              const diffResult = compareImages(
+              const diffResult = await compareImagesAsync(
                 baselineImage,
-                imageData,
+                rawImageData,
                 {
                   threshold: project.settings.diffThreshold,
                 }
@@ -159,6 +175,20 @@ export async function POST(
                 passedChecks++;
               } else {
                 changedChecks++;
+              }
+
+              // Only compress and store diff image if there are actual visual changes
+              let diffImageUrl: string | undefined;
+              if (!isIdentical) {
+                const processedDiff = await processRunImage(diffResult.diffImageBase64, targetFormat, targetQuality);
+                diffImageUrl = await uploadRunImage({
+                  projectId: id,
+                  runId: targetRunId,
+                  filename: `${page.id}_${bp.id}_diff.${targetFormat}`,
+                  buffer: processedDiff.buffer,
+                  mimeType: processedDiff.mimeType,
+                  settings: project.settings,
+                });
               }
 
               comparisons.push({
@@ -172,8 +202,8 @@ export async function POST(
                 height: bp.height,
                 fullUrl,
                 baselineImage,
-                currentImage: imageData,
-                diffImage: diffResult.diffImageBase64,
+                currentImage: currentImageUrl,
+                diffImage: diffImageUrl,
                 diffPixelCount: diffResult.diffPixelCount,
                 totalPixelCount: diffResult.totalPixelCount,
                 diffPercentage: diffResult.diffPercentage,
@@ -192,7 +222,7 @@ export async function POST(
                 height: bp.height,
                 fullUrl,
                 baselineImage,
-                currentImage: imageData,
+                currentImage: currentImageUrl,
                 diffPixelCount: 0,
                 totalPixelCount: bp.width * bp.height,
                 diffPercentage: 0,
@@ -213,7 +243,7 @@ export async function POST(
               width: bp.width,
               height: bp.height,
               fullUrl,
-              currentImage: imageData,
+              currentImage: currentImageUrl,
               diffPixelCount: 0,
               totalPixelCount: bp.width * bp.height,
               diffPercentage: 0,

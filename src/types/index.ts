@@ -27,11 +27,25 @@ export interface ProjectMember {
   joinedAt: string;
 }
 
+export interface S3StorageConfig {
+  bucket: string;
+  region: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  endpoint?: string;         // e.g. for Cloudflare R2, MinIO, or Supabase
+  publicUrlPrefix?: string;  // e.g. https://pub-xxxx.r2.dev or https://bucket.s3.amazonaws.com
+}
+
 export interface ProjectSettings {
   waitTimeMs: number;
   fullPage: boolean;
   diffThreshold: number; // 0.05 to 0.5 (sensitivity)
   diffColor: string; // e.g. '#ff0055' or 'magenta'
+  storageProvider?: 'database' | 's3';
+  s3Config?: S3StorageConfig;
+  retentionRunsCount?: number; // Keep last N runs (default 15)
+  imageFormat?: 'webp' | 'png'; // default: 'webp'
+  imageQuality?: number; // 50 to 100, default 80
 }
 
 export interface Project {
@@ -109,4 +123,8 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   fullPage: true,
   diffThreshold: 0.1,
   diffColor: '#ef4444', // Red-500
+  storageProvider: 'database',
+  retentionRunsCount: 15,
+  imageFormat: 'webp',
+  imageQuality: 80,
 };

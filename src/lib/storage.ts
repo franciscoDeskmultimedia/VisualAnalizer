@@ -557,6 +557,71 @@ export async function getRunById(
   return run;
 }
 
+export async function pruneOldRuns(projectId: string, retentionCount: number = 15): Promise<number> {
+  if (retentionCount <= 0) return 0;
+
+  if (isDbConfigured) {
+    try {
+      const project = await prisma.project.findUnique({
+        where: { id: projectId },
+        select: { baselineRunId: true },
+      });
+      const baselineRunId = project?.baselineRunId;
+
+      const runs = await prisma.run.findMany({
+        where: { projectId },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, isBaseline: true },
+      });
+
+      if (runs.length <= retentionCount) {
+        return 0;
+      }
+
+      // Keep the most recent `retentionCount` runs
+      const runsToConsider = runs.slice(retentionCount);
+      const runsToDelete = runsToConsider.filter(
+        (r) => !r.isBaseline && r.id !== baselineRunId
+      );
+
+      if (runsToDelete.length === 0) return 0;
+
+      const deleteIds = runsToDelete.map((r) => r.id);
+      await prisma.run.deleteMany({
+        where: { id: { in: deleteIds } },
+      });
+
+      console.log(`[VisualAnalizar] Retention policy pruned ${deleteIds.length} old runs for project ${projectId}`);
+      return deleteIds.length;
+    } catch (err) {
+      console.error('Error pruning old runs from PostgreSQL:', err);
+      return 0;
+    }
+  }
+
+  // Local JSON store fallback
+  const data = readStore();
+  const projectRuns = data.runs.filter((r) => r.projectId === projectId);
+  if (projectRuns.length <= retentionCount) return 0;
+
+  const project = data.projects.find((p) => p.id === projectId);
+  const baselineRunId = project?.baselineRunId;
+
+  projectRuns.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const runsToConsider = projectRuns.slice(retentionCount);
+  const deleteIds = new Set(
+    runsToConsider
+      .filter((r) => !r.isBaseline && r.id !== baselineRunId)
+      .map((r) => r.id)
+  );
+
+  if (deleteIds.size === 0) return 0;
+
+  data.runs = data.runs.filter((r) => !deleteIds.has(r.id));
+  writeStore(data);
+  return deleteIds.size;
+}
+
 export async function saveRun(run: Run): Promise<Run> {
   if (isDbConfigured) {
     try {
@@ -611,6 +676,11 @@ export async function saveRun(run: Run): Promise<Run> {
 
         // Insert / Upsert Comparisons
         for (const c of run.comparisons) {
+          // Optimization: Skip storing heavy diff image if the check is completely identical
+          const shouldStoreDiff = c.status !== 'identical' && c.diffPixelCount > 0;
+          const diffImgToStore = shouldStoreDiff ? (c.diffImage || null) : null;
+          const baselineImgToStore = (c.baselineImage && c.baselineImage !== c.currentImage) ? c.baselineImage : null;
+
           await tx.comparisonItem.upsert({
             where: { id: c.id },
             create: {
@@ -631,9 +701,9 @@ export async function saveRun(run: Run): Promise<Run> {
               errorMessage: c.errorMessage || null,
               images: {
                 create: {
-                  baselineImage: (c.baselineImage && c.baselineImage !== c.currentImage) ? c.baselineImage : null,
+                  baselineImage: baselineImgToStore,
                   currentImage: c.currentImage,
-                  diffImage: c.diffImage || null,
+                  diffImage: diffImgToStore,
                 },
               },
             },
@@ -646,14 +716,14 @@ export async function saveRun(run: Run): Promise<Run> {
               images: {
                 upsert: {
                   create: {
-                    baselineImage: (c.baselineImage && c.baselineImage !== c.currentImage) ? c.baselineImage : null,
+                    baselineImage: baselineImgToStore,
                     currentImage: c.currentImage,
-                    diffImage: c.diffImage || null,
+                    diffImage: diffImgToStore,
                   },
                   update: {
-                    baselineImage: (c.baselineImage && c.baselineImage !== c.currentImage) ? c.baselineImage : null,
+                    baselineImage: baselineImgToStore,
                     currentImage: c.currentImage,
-                    diffImage: c.diffImage || null,
+                    diffImage: diffImgToStore,
                   },
                 },
               },
@@ -661,6 +731,11 @@ export async function saveRun(run: Run): Promise<Run> {
           });
         }
       });
+
+      // Automated run retention pruning
+      const project = await getProjectById(run.projectId);
+      const retentionLimit = project?.settings?.retentionRunsCount ?? 15;
+      await pruneOldRuns(run.projectId, retentionLimit);
 
       return run;
     } catch (err) {
@@ -676,6 +751,12 @@ export async function saveRun(run: Run): Promise<Run> {
     data.runs.unshift(run);
   }
   writeStore(data);
+
+  // Trigger retention pruning for local file store
+  const project = data.projects.find((p) => p.id === run.projectId);
+  const retentionLimit = project?.settings?.retentionRunsCount ?? 15;
+  await pruneOldRuns(run.projectId, retentionLimit);
+
   return run;
 }
 

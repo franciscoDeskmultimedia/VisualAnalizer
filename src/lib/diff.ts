@@ -1,5 +1,6 @@
 import { PNG } from 'pngjs';
 import pixelmatch from 'pixelmatch';
+import sharp from 'sharp';
 
 export interface DiffResult {
   diffImageBase64: string;
@@ -13,7 +14,7 @@ export interface DiffResult {
  * Strips base64 data URI prefix and converts to Buffer
  */
 export function base64ToBuffer(base64Data: string): Buffer {
-  const cleanBase64 = base64Data.replace(/^data:image\/\w+;base64,/, '');
+  const cleanBase64 = base64Data.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
   return Buffer.from(cleanBase64, 'base64');
 }
 
@@ -22,6 +23,30 @@ export function base64ToBuffer(base64Data: string): Buffer {
  */
 export function bufferToBase64Png(buffer: Buffer): string {
   return `data:image/png;base64,${buffer.toString('base64')}`;
+}
+
+/**
+ * Resolves an image input (base64 data URI, raw Buffer, or HTTP/HTTPS URL)
+ * into a normalized PNG Buffer ready for pixelmatch.
+ */
+export async function ensurePngBuffer(input: Buffer | string): Promise<Buffer> {
+  let rawBuffer: Buffer;
+
+  if (Buffer.isBuffer(input)) {
+    rawBuffer = input;
+  } else if (input.startsWith('http://') || input.startsWith('https://')) {
+    const res = await fetch(input);
+    if (!res.ok) {
+      throw new Error(`Failed to fetch image from URL: ${input} (HTTP ${res.status})`);
+    }
+    const arrayBuf = await res.arrayBuffer();
+    rawBuffer = Buffer.from(arrayBuf);
+  } else {
+    rawBuffer = base64ToBuffer(input);
+  }
+
+  // Convert to PNG buffer via sharp if it's WebP, JPEG or other format
+  return sharp(rawBuffer).png().toBuffer();
 }
 
 /**
@@ -107,4 +132,24 @@ export function compareImages(
     diffPercentage: Number(diffPercentage.toFixed(2)),
     isIdentical: diffPixels === 0,
   };
+}
+
+/**
+ * Asynchronously normalizes inputs (supporting base64 data URIs, WebP, PNG, and remote URLs)
+ * and runs visual regression comparison.
+ */
+export async function compareImagesAsync(
+  img1Input: Buffer | string,
+  img2Input: Buffer | string,
+  options?: {
+    threshold?: number;
+    diffColorRgb?: [number, number, number];
+  }
+): Promise<DiffResult> {
+  const [buf1, buf2] = await Promise.all([
+    ensurePngBuffer(img1Input),
+    ensurePngBuffer(img2Input),
+  ]);
+
+  return compareImages(buf1, buf2, options);
 }
