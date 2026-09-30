@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { Project, Run, ProjectMember, Screenshot, ComparisonItem, DEFAULT_BREAKPOINTS, DEFAULT_PROJECT_SETTINGS } from '@/types';
 import { prisma, isDbConfigured } from './prisma';
+import { isCloudStorageConfigured } from './storage-provider';
 
 interface StoreData {
   projects: Project[];
@@ -632,6 +633,100 @@ export async function pruneOldRuns(projectId: string, retentionCount: number = 1
   return deleteIds.size;
 }
 
+/**
+ * Deletes all non-baseline runs for a project. Used in Ephemeral mode when
+ * replacing the previous check run.
+ */
+export async function deleteNonBaselineRuns(projectId: string): Promise<number> {
+  if (isDbConfigured) {
+    try {
+      const project = await prisma.project.findUnique({
+        where: { id: projectId },
+        select: { baselineRunId: true },
+      });
+      const baselineRunId = project?.baselineRunId;
+
+      const runsToDelete = await prisma.run.findMany({
+        where: {
+          projectId,
+          ...(baselineRunId ? { id: { not: baselineRunId } } : {}),
+        },
+        select: { id: true },
+      });
+
+      if (runsToDelete.length === 0) return 0;
+
+      const deleteIds = runsToDelete.map((r) => r.id);
+      await prisma.run.deleteMany({
+        where: { id: { in: deleteIds } },
+      });
+
+      console.log(`[VisualAnalizar] Deleted ${deleteIds.length} non-baseline runs for ephemeral project ${projectId}`);
+      return deleteIds.length;
+    } catch (err) {
+      console.error('Error deleting non-baseline runs:', err);
+      return 0;
+    }
+  }
+
+  const data = readStore();
+  const project = data.projects.find((p) => p.id === projectId);
+  const baselineRunId = project?.baselineRunId;
+  const initialCount = data.runs.length;
+  data.runs = data.runs.filter(
+    (r) => r.projectId !== projectId || (baselineRunId && r.id === baselineRunId)
+  );
+  writeStore(data);
+  return initialCount - data.runs.length;
+}
+
+/**
+ * Cleans up ephemeral runs (screenshots, comparisons, blobs) for projects that
+ * do not have custom cloud storage (S3/R2) configured. Called on session end / logout.
+ */
+export async function cleanupEphemeralRunsForUser(userId?: string, userEmail?: string): Promise<number> {
+  try {
+    const projects = await getProjects(userId, userEmail);
+    const ephemeralProjects = projects.filter((p) => !isCloudStorageConfigured(p.settings));
+
+    if (ephemeralProjects.length === 0) return 0;
+
+    let totalDeleted = 0;
+    for (const project of ephemeralProjects) {
+      if (isDbConfigured) {
+        try {
+          const deleted = await prisma.run.deleteMany({
+            where: { projectId: project.id },
+          });
+          await prisma.project.update({
+            where: { id: project.id },
+            data: { baselineRunId: null },
+          });
+          totalDeleted += deleted.count;
+        } catch (err) {
+          console.error(`Error deleting ephemeral runs for project ${project.id}:`, err);
+        }
+      } else {
+        const data = readStore();
+        const prevCount = data.runs.length;
+        data.runs = data.runs.filter((r) => r.projectId !== project.id);
+        totalDeleted += (prevCount - data.runs.length);
+        const proj = data.projects.find((p) => p.id === project.id);
+        if (proj) {
+          proj.baselineRunId = null;
+        }
+        writeStore(data);
+      }
+    }
+
+    console.log(`[VisualAnalizar] Cleaned up ${totalDeleted} ephemeral runs on session end for user ${userId || 'anonymous'}`);
+    return totalDeleted;
+  } catch (error) {
+    console.error('Error cleaning up ephemeral runs:', error);
+    return 0;
+  }
+}
+
 export async function saveRun(run: Run): Promise<Run> {
   if (isDbConfigured) {
     try {
@@ -759,8 +854,10 @@ export async function saveRun(run: Run): Promise<Run> {
       });
 
       // Automated run retention pruning
+      // In Ephemeral Mode (no cloud storage), cap retention strictly at 2 runs
       const project = await getProjectById(run.projectId);
-      const retentionLimit = project?.settings?.retentionRunsCount ?? 15;
+      const isCloud = isCloudStorageConfigured(project?.settings);
+      const retentionLimit = isCloud ? (project?.settings?.retentionRunsCount ?? 15) : 2;
       await pruneOldRuns(run.projectId, retentionLimit);
 
       return run;
@@ -779,8 +876,10 @@ export async function saveRun(run: Run): Promise<Run> {
   writeStore(data);
 
   // Trigger retention pruning for local file store
+  // In Ephemeral Mode (no cloud storage), cap retention strictly at 2 runs
   const project = data.projects.find((p) => p.id === run.projectId);
-  const retentionLimit = project?.settings?.retentionRunsCount ?? 15;
+  const isCloud = isCloudStorageConfigured(project?.settings);
+  const retentionLimit = isCloud ? (project?.settings?.retentionRunsCount ?? 15) : 2;
   await pruneOldRuns(run.projectId, retentionLimit);
 
   return run;

@@ -35,6 +35,7 @@ interface ProjectSettingsModalProps {
   onClose: () => void;
   onSave: (updatedProject: Project) => Promise<void>;
   onDelete: (projectId: string) => Promise<void>;
+  initialTab?: 'general' | 'pages' | 'breakpoints' | 'settings' | 'storage';
 }
 
 export function ProjectSettingsModal({
@@ -43,8 +44,11 @@ export function ProjectSettingsModal({
   onClose,
   onSave,
   onDelete,
+  initialTab,
 }: ProjectSettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<'general' | 'pages' | 'breakpoints' | 'settings' | 'storage'>('pages');
+  const [activeTab, setActiveTab] = useState<'general' | 'pages' | 'breakpoints' | 'settings' | 'storage'>(
+    initialTab || 'pages'
+  );
 
   // Local form state
   const [name, setName] = useState(project.name);
@@ -86,7 +90,10 @@ export function ProjectSettingsModal({
     setPages(project.pages || []);
     setBreakpoints(project.breakpoints || []);
     setSettings(project.settings);
-  }, [project]);
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [project, initialTab]);
 
   if (!isOpen) return null;
 
@@ -939,43 +946,45 @@ export function ProjectSettingsModal({
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {/* Option 1: Database (Default) */}
+                  {/* Option 1: Database (Ephemeral Sandbox) */}
                   <div
                     onClick={() => setSettings({ ...settings, storageProvider: 'database' })}
                     className={`p-4 rounded-xl border cursor-pointer transition-all ${
                       (settings.storageProvider || 'database') === 'database'
-                        ? 'bg-indigo-950/30 border-indigo-500/80 shadow-lg shadow-indigo-950/40 ring-1 ring-indigo-500/50'
+                        ? 'bg-amber-950/20 border-amber-500/80 shadow-lg shadow-amber-950/30 ring-1 ring-amber-500/40'
                         : 'bg-slate-950 border-slate-800 hover:border-slate-700'
                     }`}
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-2.5">
-                        <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                        <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20">
                           <Database className="w-4 h-4" />
                         </div>
                         <div>
-                          <div className="text-sm font-semibold text-white">PostgreSQL Database</div>
-                          <div className="text-[11px] text-indigo-300 font-medium">Built-in (Zero Setup)</div>
+                          <div className="text-sm font-semibold text-white">Temporary Session Storage</div>
+                          <div className="text-[11px] text-amber-400 font-medium flex items-center gap-1">
+                            <span>Ephemeral Sandbox (Max 2 Runs)</span>
+                          </div>
                         </div>
                       </div>
                       <div
                         className={`w-4 h-4 rounded-full border flex items-center justify-center ${
                           (settings.storageProvider || 'database') === 'database'
-                            ? 'border-indigo-500 bg-indigo-500 text-white'
+                            ? 'border-amber-500 bg-amber-500 text-slate-950'
                             : 'border-slate-700'
                         }`}
                       >
                         {(settings.storageProvider || 'database') === 'database' && (
-                          <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                          <div className="w-1.5 h-1.5 rounded-full bg-slate-950" />
                         )}
                       </div>
                     </div>
                     <p className="text-xs text-slate-400 mt-3 leading-relaxed">
-                      Screenshots are compressed via WebP and stored directly inside your PostgreSQL database. Best for rapid local dev or small teams.
+                      Screenshots live temporarily in PostgreSQL and are <strong>strictly capped at 2 runs (1 Baseline + 1 Check)</strong>. All screenshot data is discarded when your session ends.
                     </p>
                   </div>
 
-                  {/* Option 2: Custom S3 / R2 (BYOS) */}
+                  {/* Option 2: Custom S3 / R2 (Persistent Cloud Storage) */}
                   <div
                     onClick={() => setSettings({ ...settings, storageProvider: 's3' })}
                     className={`p-4 rounded-xl border cursor-pointer transition-all ${
@@ -990,8 +999,8 @@ export function ProjectSettingsModal({
                           <Cloud className="w-4 h-4" />
                         </div>
                         <div>
-                          <div className="text-sm font-semibold text-white">Custom Cloud Storage (BYOS)</div>
-                          <div className="text-[11px] text-emerald-300 font-medium">S3 / Cloudflare R2 / MinIO</div>
+                          <div className="text-sm font-semibold text-white">Connected Cloud Storage (BYOS)</div>
+                          <div className="text-[11px] text-emerald-300 font-medium">Persistent • S3 / R2 / Supabase</div>
                         </div>
                       </div>
                       <div
@@ -1007,7 +1016,7 @@ export function ProjectSettingsModal({
                       </div>
                     </div>
                     <p className="text-xs text-slate-400 mt-3 leading-relaxed">
-                      Connect your own S3 bucket. Images are stored in your cloud with zero platform capacity limits. Postgres only stores small image URLs.
+                      Connect your own S3 bucket. Enables <strong>unlimited runs, full history timelines, and permanent cross-session storage</strong> with zero database capacity limits.
                     </p>
                   </div>
                 </div>
@@ -1264,34 +1273,60 @@ export function ProjectSettingsModal({
               <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-xs font-semibold text-slate-200 uppercase tracking-wider">
-                      Automated Run Retention Policy
+                    <div className="text-xs font-semibold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>Automated Run Retention Policy</span>
+                      {settings.storageProvider !== 's3' && (
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          Locked (2 Runs Max)
+                        </span>
+                      )}
                     </div>
                     <div className="text-[11px] text-slate-400 mt-0.5">
-                      Frees disk space by automatically pruning older test runs while preserving the active baseline.
+                      {settings.storageProvider === 's3'
+                        ? 'Frees disk space by automatically pruning older test runs while preserving the active baseline.'
+                        : 'In Temporary Session Mode, runs are strictly capped at 2 (1 Baseline + 1 Comparison).'}
                     </div>
                   </div>
-                  <span className="text-xs font-mono text-indigo-400 font-semibold px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/20">
-                    Keep last {settings.retentionRunsCount ?? 15} runs
+                  <span className={`text-xs font-mono font-semibold px-2 py-0.5 rounded border ${
+                    settings.storageProvider === 's3'
+                      ? 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20'
+                      : 'text-amber-400 bg-amber-500/10 border-amber-500/20'
+                  }`}>
+                    {settings.storageProvider === 's3' ? `Keep last ${settings.retentionRunsCount ?? 15} runs` : '2 runs max'}
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2 pt-1">
-                  {[5, 10, 15, 25, 50].map((count) => (
+                {settings.storageProvider === 's3' ? (
+                  <div className="flex items-center gap-2 pt-1">
+                    {[5, 10, 15, 25, 50].map((count) => (
+                      <button
+                        key={count}
+                        type="button"
+                        onClick={() => setSettings({ ...settings, retentionRunsCount: count })}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                          (settings.retentionRunsCount ?? 15) === count
+                            ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
+                            : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
+                        }`}
+                      >
+                        {count} runs
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] flex items-center justify-between gap-2">
+                    <span>
+                      🔒 Multi-run retention (5, 10, 15, 25, 50 runs) requires connected Cloud Storage. Select <strong>Connected Cloud Storage (BYOS)</strong> above to unlock.
+                    </span>
                     <button
-                      key={count}
                       type="button"
-                      onClick={() => setSettings({ ...settings, retentionRunsCount: count })}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                        (settings.retentionRunsCount ?? 15) === count
-                          ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
-                          : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
-                      }`}
+                      onClick={() => setSettings({ ...settings, storageProvider: 's3' })}
+                      className="px-2.5 py-1 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-[10px] whitespace-nowrap cursor-pointer transition-colors"
                     >
-                      {count} runs
+                      Enable Cloud Storage
                     </button>
-                  ))}
-                </div>
+                  </div>
+                )}
               </div>
 
               {/* Image Compression & Format Settings */}

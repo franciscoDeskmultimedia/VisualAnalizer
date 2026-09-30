@@ -97,17 +97,26 @@ export interface UploadImageOptions {
 }
 
 /**
+ * Determines whether the project has valid cloud storage (S3/R2/Supabase) configured
+ */
+export function isCloudStorageConfigured(settings?: ProjectSettings): boolean {
+  if (!settings) return false;
+  return (
+    settings.storageProvider === 's3' &&
+    Boolean(settings.s3Config?.bucket?.trim()) &&
+    Boolean(settings.s3Config?.accessKeyId?.trim()) &&
+    Boolean(settings.s3Config?.secretAccessKey?.trim())
+  );
+}
+
+/**
  * Uploads an image either to the user's connected S3/R2 storage (if enabled)
  * or returns a compressed base64 data URI for database storage.
  */
 export async function uploadRunImage(options: UploadImageOptions): Promise<string> {
   const { projectId, runId, filename, buffer, mimeType, settings } = options;
 
-  const isS3Enabled =
-    settings?.storageProvider === 's3' &&
-    Boolean(settings?.s3Config?.bucket) &&
-    Boolean(settings?.s3Config?.accessKeyId) &&
-    Boolean(settings?.s3Config?.secretAccessKey);
+  const isS3Enabled = isCloudStorageConfigured(settings);
 
   if (isS3Enabled && settings?.s3Config) {
     try {

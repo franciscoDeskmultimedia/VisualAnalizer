@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { getProjectById, getRunsByProjectId, getRunById, saveRun, setProjectBaselineRun } from '@/lib/storage';
+import { getProjectById, getRunsByProjectId, getRunById, saveRun, setProjectBaselineRun, deleteNonBaselineRuns } from '@/lib/storage';
 import { captureScreenshot, captureMultipleComponentStates } from '@/lib/screenshot';
 import { compareImagesAsync } from '@/lib/diff';
 import { processRunImage } from '@/lib/image-processing';
-import { uploadRunImage } from '@/lib/storage-provider';
+import { uploadRunImage, isCloudStorageConfigured } from '@/lib/storage-provider';
 import { Run, Screenshot, ComparisonItem } from '@/types';
 
 // Vercel serverless function execution timeout up to 60 seconds
@@ -48,7 +48,13 @@ export async function POST(
     }
 
     const body = await request.json().catch(() => ({}));
-    const { pageIds, breakpointIds, setAsBaseline, pagePaths } = body;
+    const { pageIds, breakpointIds, setAsBaseline, pagePaths, replaceRun } = body;
+
+    const isCloud = isCloudStorageConfigured(project.settings);
+    // If in ephemeral mode and replacing previous run, delete non-baseline runs before starting
+    if (!isCloud && replaceRun && !body.runId) {
+      await deleteNonBaselineRuns(id);
+    }
 
     // Resilient matching for pages: exact id, suffix, or path
     const targetPages = pageIds && pageIds.length > 0

@@ -12,6 +12,8 @@ import { RunProgressModal } from '@/components/RunProgressModal';
 import { AuthModal } from '@/components/AuthModal';
 import { TeamShareModal } from '@/components/TeamShareModal';
 import { DeleteProjectModal } from '@/components/DeleteProjectModal';
+import { StorageLimitModal } from '@/components/StorageLimitModal';
+import { isCloudStorageConfigured } from '@/lib/storage-provider';
 import {
   Layers,
   Play,
@@ -29,7 +31,8 @@ import {
   History,
   Users,
   Trash2,
-  Share2
+  Share2,
+  Cloud,
 } from 'lucide-react';
 
 export default function HomePage() {
@@ -46,6 +49,8 @@ export default function HomePage() {
 
   // Modals state
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'general' | 'pages' | 'breakpoints' | 'settings' | 'storage'>('pages');
+  const [isStorageLimitOpen, setIsStorageLimitOpen] = useState(false);
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -176,8 +181,16 @@ export default function HomePage() {
   }, [activeProject, fetchRuns]);
 
   // Handler: Run Visual Check
-  const handleRunCheck = async () => {
+  const handleRunCheck = async (replaceRun = false) => {
     if (!activeProject || isChecking) return;
+
+    // Check if cloud storage is configured; if not, enforce 2-run cap
+    const hasStorage = isCloudStorageConfigured(activeProject.settings);
+    if (!hasStorage && runs.length >= 2 && !replaceRun) {
+      setIsStorageLimitOpen(true);
+      return;
+    }
+
     setIsChecking(true);
     const runId = `run_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
@@ -194,6 +207,7 @@ export default function HomePage() {
             runId,
             pageIds: [page.id],
             pagePaths: [page.path],
+            replaceRun: Boolean(replaceRun),
           }),
         });
 
@@ -408,6 +422,27 @@ export default function HomePage() {
                     </span>
                   )}
 
+                  {/* Storage Persistence Badge */}
+                  {isCloudStorageConfigured(activeProject.settings) ? (
+                    <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 rounded-full">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                      <span>Cloud Storage (Persistent)</span>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSettingsInitialTab('storage');
+                        setIsSettingsOpen(true);
+                      }}
+                      className="flex items-center gap-1 text-[11px] font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/30 hover:border-amber-500/60 hover:bg-amber-500/15 px-2.5 py-0.5 rounded-full transition-all cursor-pointer"
+                      title="Click to connect persistent cloud storage (S3/R2)"
+                    >
+                      <AlertTriangle className="w-3 h-3 text-amber-400" />
+                      <span>Temporary Session (2 Runs Max)</span>
+                    </button>
+                  )}
+
                   {/* Team Members Count Badge */}
                   {activeProject.members && activeProject.members.length > 0 && (
                     <button
@@ -474,7 +509,7 @@ export default function HomePage() {
                 </div>
 
                 <button
-                  onClick={handleRunCheck}
+                  onClick={() => handleRunCheck()}
                   disabled={isChecking}
                   className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center gap-2 shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-50 cursor-pointer"
                 >
@@ -496,6 +531,42 @@ export default function HomePage() {
           </div>
         )}
 
+        {/* Ephemeral Session Warning Alert Banner */}
+        {activeProject && !isCloudStorageConfigured(activeProject.settings) && (
+          <div className="rounded-2xl p-4 sm:p-5 bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-slate-900 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl shadow-amber-950/20 animate-in fade-in duration-200">
+            <div className="flex items-start sm:items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 flex-shrink-0 shadow-md shadow-amber-500/10">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-amber-200 uppercase tracking-wider">
+                    Temporary Session Storage Active
+                  </span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
+                    {runs.length}/2 Runs Used
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                  Cloud storage is not connected. Visual check runs are strictly capped at <strong>2 runs</strong> (1 Baseline + 1 Comparison) and screenshots will be lost when your session ends.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSettingsInitialTab('storage');
+                setIsSettingsOpen(true);
+              }}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30 transition-all self-start sm:self-auto cursor-pointer whitespace-nowrap"
+            >
+              <Cloud className="w-3.5 h-3.5 fill-slate-950" />
+              <span>Connect Cloud Storage</span>
+            </button>
+          </div>
+        )}
+
         {/* If project has NO runs yet */}
         {activeProject && runs.length === 0 && !isChecking && (
           <div className="glass-panel rounded-3xl p-12 text-center border border-slate-800 space-y-4">
@@ -509,7 +580,7 @@ export default function HomePage() {
               </p>
             </div>
             <button
-              onClick={handleRunCheck}
+              onClick={() => handleRunCheck()}
               className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs shadow-lg shadow-indigo-600/30 transition-all inline-flex items-center gap-2 cursor-pointer"
             >
               <Play className="w-3.5 h-3.5 fill-white" />
@@ -655,9 +726,31 @@ export default function HomePage() {
         <ProjectSettingsModal
           project={activeProject}
           isOpen={isSettingsOpen}
-          onClose={() => setIsSettingsOpen(false)}
+          initialTab={settingsInitialTab}
+          onClose={() => {
+            setIsSettingsOpen(false);
+            setSettingsInitialTab('pages');
+          }}
           onSave={handleSaveProject}
           onDelete={handleConfirmDeleteProject}
+        />
+      )}
+
+      {/* Storage Limit Modal for Ephemeral 2-Run Cap */}
+      {activeProject && (
+        <StorageLimitModal
+          isOpen={isStorageLimitOpen}
+          projectName={activeProject.name}
+          onClose={() => setIsStorageLimitOpen(false)}
+          onConnectStorage={() => {
+            setIsStorageLimitOpen(false);
+            setSettingsInitialTab('storage');
+            setIsSettingsOpen(true);
+          }}
+          onConfirmReplaceRun={() => {
+            setIsStorageLimitOpen(false);
+            handleRunCheck(true);
+          }}
         />
       )}
 
