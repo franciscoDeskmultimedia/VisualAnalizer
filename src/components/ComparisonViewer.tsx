@@ -137,11 +137,33 @@ export function ComparisonViewer({
     }
   };
 
-  const checksForCurrentPageAndBp = run.comparisons.filter(
+  const currentPagePath = currentComparison?.pagePath || pages.find((p) => p.id === selectedPageId)?.path;
+  const currentBpWidth = breakpoints.find((b) => b.id === selectedBreakpointId)?.width;
+
+  // All checks for this page across any breakpoint
+  const allPageChecks = run.comparisons.filter(
     (c) =>
-      c.pageId === (currentComparison?.pageId || selectedPageId) &&
-      c.breakpointId === (currentComparison?.breakpointId || selectedBreakpointId)
+      c.pageId === (currentComparison?.pageId || selectedPageId) ||
+      (currentPagePath && c.pagePath === currentPagePath)
   );
+
+  // Checks for the currently selected page and breakpoint
+  const checksForCurrentPageAndBp = allPageChecks.filter(
+    (c) =>
+      c.breakpointId === (currentComparison?.breakpointId || selectedBreakpointId) ||
+      (currentBpWidth && c.width === currentBpWidth)
+  );
+
+  const hasComponentChecksOnPage = allPageChecks.some((c) => c.isComponent);
+
+  const siblingStates = currentComparison?.isComponent
+    ? checksForCurrentPageAndBp.filter(
+        (c) =>
+          c.isComponent &&
+          (c.componentId === currentComparison.componentId ||
+            c.componentName === currentComparison.componentName)
+      )
+    : [];
 
   // Dragging logic for the 2-Up split slider
   const handleSliderMove = useCallback((clientX: number) => {
@@ -376,29 +398,61 @@ export function ComparisonViewer({
           </div>
 
           {/* Target Check Dropdown (Full Page vs Component States) */}
-          {checksForCurrentPageAndBp.length > 1 && (
+          {(hasComponentChecksOnPage || checksForCurrentPageAndBp.length > 1) && (
             <>
               <div className="h-5 w-px bg-slate-800 hidden sm:block" />
-              <div className="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
-                <span className="text-xs font-semibold text-slate-400 pl-2 hidden sm:inline">
-                  Target:
-                </span>
-                <select
-                  value={currentComparison.id}
-                  onChange={(e) => {
-                    setActiveComparisonId(e.target.value);
-                    onSelectComparisonId?.(e.target.value);
-                  }}
-                  className="bg-slate-950 border border-purple-500/40 text-purple-200 font-semibold rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-purple-400 cursor-pointer"
-                >
-                  {checksForCurrentPageAndBp.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.isComponent
-                        ? `🧩 ${c.componentName} (:${c.componentState || 'default'})`
-                        : '📄 Full Page View'}
-                    </option>
-                  ))}
-                </select>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-purple-500/30 shadow-sm shadow-purple-500/5">
+                  <span className="text-xs font-semibold text-purple-300 pl-2 hidden sm:inline flex items-center gap-1">
+                    <Component className="w-3 h-3 text-purple-400" />
+                    Target:
+                  </span>
+                  <select
+                    value={currentComparison.id}
+                    onChange={(e) => {
+                      const selectedId = e.target.value;
+                      setActiveComparisonId(selectedId);
+                      const selectedItem = run.comparisons.find((c) => c.id === selectedId);
+                      if (selectedItem) {
+                        setSelectedBreakpointId(selectedItem.breakpointId);
+                      }
+                      onSelectComparisonId?.(selectedId);
+                    }}
+                    className="bg-slate-950 border border-purple-500/40 text-purple-200 font-semibold rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-purple-400 cursor-pointer"
+                  >
+                    {checksForCurrentPageAndBp.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.isComponent
+                          ? `🧩 ${c.componentName} (:${c.componentState || 'default'})`
+                          : '📄 Full Page View'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Quick Interactive State Pills (:default, :hover, :active, etc.) */}
+                {siblingStates.length > 1 && (
+                  <div className="flex items-center bg-slate-950/80 p-0.5 rounded-lg border border-purple-500/30">
+                    {siblingStates.map((st) => (
+                      <button
+                        key={st.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveComparisonId(st.id);
+                          onSelectComparisonId?.(st.id);
+                        }}
+                        className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold transition-all ${
+                          st.id === currentComparison.id
+                            ? 'bg-purple-600 text-white shadow-sm'
+                            : 'text-purple-300 hover:text-white hover:bg-purple-800/40'
+                        }`}
+                        title={`View :${st.componentState} state`}
+                      >
+                        :{st.componentState || 'default'}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -563,6 +617,11 @@ export function ComparisonViewer({
                 <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
                 <span>Set as Baseline</span>
               </button>
+            </div>
+          ) : currentComparison.status === 'error' ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30 font-semibold">
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>{currentComparison.errorMessage || 'Component capture failed on this viewport'}</span>
             </div>
           ) : null}
 

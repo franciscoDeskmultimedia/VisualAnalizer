@@ -270,6 +270,11 @@ export function ComparisonGrid({
                       <Sparkles className="w-3 h-3" />
                       <span>New Base</span>
                     </span>
+                  ) : c.status === 'error' ? (
+                    <span className="flex items-center gap-1 text-[10px] font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/30 px-2 py-0.5 rounded-full" title={c.errorMessage || 'Error'}>
+                      <AlertTriangle className="w-3 h-3" />
+                      <span>Not Found</span>
+                    </span>
                   ) : null}
                 </div>
               </div>
@@ -280,15 +285,24 @@ export function ComparisonGrid({
                   isComp ? 'bg-slate-950 p-3' : 'bg-black'
                 }`}
               >
-                <img
-                  src={isBaseline ? c.currentImage : (c.diffImage || c.currentImage)}
-                  alt={isComp ? (c.componentName || 'Component') : c.pageName}
-                  className={
-                    isComp
-                      ? 'max-h-full max-w-full object-contain drop-shadow-md rounded transition-transform group-hover:scale-105 duration-300'
-                      : 'w-full object-cover object-top transition-transform duration-1000 ease-in-out group-hover:translate-y-[-25%]'
-                  }
-                />
+                {c.status === 'error' || !c.currentImage ? (
+                  <div className="text-center p-4 space-y-1 text-slate-500">
+                    <AlertTriangle className="w-5 h-5 mx-auto text-amber-500/70" />
+                    <p className="text-[11px] font-medium text-slate-400 max-w-[200px] leading-tight">
+                      {c.errorMessage || 'Component not visible on this viewport'}
+                    </p>
+                  </div>
+                ) : (
+                  <img
+                    src={isBaseline ? c.currentImage : (c.diffImage || c.currentImage)}
+                    alt={isComp ? (c.componentName || 'Component') : c.pageName}
+                    className={
+                      isComp
+                        ? 'max-h-full max-w-full object-contain drop-shadow-md rounded transition-transform group-hover:scale-105 duration-300'
+                        : 'w-full object-cover object-top transition-transform duration-1000 ease-in-out group-hover:translate-y-[-25%]'
+                    }
+                  />
+                )}
 
                 {/* Hover overlay hint */}
                 <div

@@ -257,11 +257,11 @@ export async function captureMultipleComponentStates(options: {
       await new Promise((resolve) => setTimeout(resolve, waitTimeMs));
     }
 
-    // Wait for the target element to be present in DOM
-    await page.waitForSelector(selector, { timeout: 10000 });
+    // Wait for the target element to be present in DOM (fail fast if hidden on mobile/tablet)
+    await page.waitForSelector(selector, { timeout: 3500 }).catch(() => null);
     const element = await page.$(selector);
     if (!element) {
-      throw new Error(`Target component element "${selector}" was not found on page ${url}`);
+      throw new Error(`Target component element "${selector}" was not found at ${width}x${height} (it may be hidden or collapsed on this viewport).`);
     }
 
     // Scroll element into view smoothly

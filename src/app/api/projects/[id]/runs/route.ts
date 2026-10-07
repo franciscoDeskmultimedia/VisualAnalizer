@@ -445,6 +445,27 @@ export async function POST(
             } catch (compErr: unknown) {
               const err = compErr as Error;
               console.warn(`Failed to capture component "${comp.name}" (${comp.selector}) at ${bp.name}:`, err.message);
+              comparisons.push({
+                id: `cmp_err_${comp.id}_${bp.id}_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
+                pageId: page.id,
+                pageName: page.name,
+                pagePath: page.path,
+                breakpointId: bp.id,
+                breakpointName: bp.name,
+                width: bp.width,
+                height: bp.height,
+                fullUrl,
+                isComponent: true,
+                componentId: comp.id,
+                componentName: comp.name,
+                componentState: 'default',
+                currentImage: '',
+                diffPixelCount: 0,
+                totalPixelCount: bp.width * bp.height,
+                diffPercentage: 0,
+                status: 'error',
+                errorMessage: `Could not capture component on ${bp.name}: ${err.message}`,
+              });
             }
           }
         }
