@@ -13,7 +13,7 @@ import { AuthModal } from '@/components/AuthModal';
 import { TeamShareModal } from '@/components/TeamShareModal';
 import { DeleteProjectModal } from '@/components/DeleteProjectModal';
 import { StorageLimitModal } from '@/components/StorageLimitModal';
-import { isCloudStorageConfigured } from '@/lib/storage-provider';
+import { isCloudStorageConfigured } from '@/types';
 import {
   Layers,
   Play,

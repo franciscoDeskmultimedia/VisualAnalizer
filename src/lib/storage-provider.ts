@@ -1,5 +1,5 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand, HeadBucketCommand } from '@aws-sdk/client-s3';
-import { S3StorageConfig, ProjectSettings } from '@/types';
+import { S3StorageConfig, ProjectSettings, isCloudStorageConfigured } from '@/types';
 import { bufferToDataUri } from './image-processing';
 
 /**
@@ -96,18 +96,7 @@ export interface UploadImageOptions {
   settings?: ProjectSettings;
 }
 
-/**
- * Determines whether the project has valid cloud storage (S3/R2/Supabase) configured
- */
-export function isCloudStorageConfigured(settings?: ProjectSettings): boolean {
-  if (!settings) return false;
-  return (
-    settings.storageProvider === 's3' &&
-    Boolean(settings.s3Config?.bucket?.trim()) &&
-    Boolean(settings.s3Config?.accessKeyId?.trim()) &&
-    Boolean(settings.s3Config?.secretAccessKey?.trim())
-  );
-}
+export { isCloudStorageConfigured } from '@/types';
 
 /**
  * Uploads an image either to the user's connected S3/R2 storage (if enabled)

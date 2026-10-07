@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
     "postinstall": "prisma generate",
@@ -28,7 +28,8 @@
     "prisma": "^6.19.3",
     "puppeteer-core": "^25.12.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "sharp": "^0.35.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

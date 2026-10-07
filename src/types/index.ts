@@ -147,3 +147,16 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   imageFormat: 'webp',
   imageQuality: 80,
 };
+
+/**
+ * Determines whether the project has valid cloud storage (S3/R2/Supabase) configured
+ */
+export function isCloudStorageConfigured(settings?: ProjectSettings): boolean {
+  if (!settings) return false;
+  return (
+    settings.storageProvider === 's3' &&
+    Boolean(settings.s3Config?.bucket?.trim()) &&
+    Boolean(settings.s3Config?.accessKeyId?.trim()) &&
+    Boolean(settings.s3Config?.secretAccessKey?.trim())
+  );
+}
