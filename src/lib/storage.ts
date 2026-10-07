@@ -377,6 +377,9 @@ export async function saveProject(project: Project): Promise<Project> {
             })),
           });
         }
+      }, {
+        maxWait: 15000,
+        timeout: 30000,
       });
 
       const persisted = await getProjectById(project.id);
@@ -851,6 +854,9 @@ export async function saveRun(run: Run): Promise<Run> {
             },
           });
         }
+      }, {
+        maxWait: 15000,
+        timeout: 30000,
       });
 
       // Automated run retention pruning
@@ -888,42 +894,38 @@ export async function saveRun(run: Run): Promise<Run> {
 export async function setProjectBaselineRun(projectId: string, runId: string): Promise<boolean> {
   if (isDbConfigured) {
     try {
-      await prisma.$transaction(async (tx) => {
-        // Set project baselineRunId
-        await tx.project.update({
-          where: { id: projectId },
-          data: { baselineRunId: runId },
-        });
+      await prisma.$transaction(
+        async (tx) => {
+          // 1. Set project baselineRunId
+          await tx.project.update({
+            where: { id: projectId },
+            data: { baselineRunId: runId },
+          });
 
-        // Set isBaseline flags
-        await tx.run.updateMany({
-          where: { projectId },
-          data: { isBaseline: false },
-        });
+          // 2. Set isBaseline flags
+          await tx.run.updateMany({
+            where: { projectId },
+            data: { isBaseline: false },
+          });
 
-        await tx.run.update({
-          where: { id: runId },
-          data: { isBaseline: true },
-        });
+          // 3. Count total comparisons in newly promoted baseline
+          const baselineCompCount = await tx.comparisonItem.count({
+            where: { runId },
+          });
 
-        // Fetch the newly promoted baseline run's comparisons
-        const baselineComparisons = await tx.comparisonItem.findMany({
-          where: { runId },
-          include: { images: true },
-        });
+          await tx.run.update({
+            where: { id: runId },
+            data: {
+              isBaseline: true,
+              passedChecks: baselineCompCount,
+              changedChecks: 0,
+              newChecks: 0,
+            },
+          });
 
-        for (const c of baselineComparisons) {
-          if (c.images) {
-            await tx.comparisonImages.update({
-              where: { comparisonId: c.id },
-              data: {
-                baselineImage: null, // In baseline run, baseline is identical to currentImage
-                diffImage: null,
-              },
-            });
-          }
-          await tx.comparisonItem.update({
-            where: { id: c.id },
+          // 4. Batch update all comparisons in baseline run to identical (0 diff pixels)
+          await tx.comparisonItem.updateMany({
+            where: { runId },
             data: {
               diffPixelCount: 0,
               diffPercentage: 0,
@@ -931,50 +933,32 @@ export async function setProjectBaselineRun(projectId: string, runId: string): P
               errorMessage: null,
             },
           });
-        }
 
-        await tx.run.update({
-          where: { id: runId },
-          data: {
-            passedChecks: baselineComparisons.length,
-            changedChecks: 0,
-            newChecks: 0,
-          },
-        });
-
-        // Update other runs in this project to point to the newly promoted baseline's images
-        const otherRuns = await tx.run.findMany({
-          where: { projectId, id: { not: runId } },
-          include: {
-            comparisons: {
-              include: { images: true },
-            },
-          },
-        });
-
-        for (const r of otherRuns) {
-          for (const c of r.comparisons) {
-            const match = baselineComparisons.find(
-              (bc) =>
-                (bc.pageId === c.pageId || bc.pagePath === c.pagePath) &&
-                (bc.breakpointId === c.breakpointId || bc.width === c.width)
-            );
-            const newBaselineImg = match?.images?.currentImage;
-            if (newBaselineImg && c.images) {
-              await tx.comparisonImages.update({
-                where: { comparisonId: c.id },
-                data: {
-                  baselineImage: newBaselineImg,
-                },
-              });
-            }
+          // 5. Bulk clear diff images for comparisons in baseline run
+          const baselineComparisons = await tx.comparisonItem.findMany({
+            where: { runId },
+            select: { id: true },
+          });
+          const compIds = baselineComparisons.map((c) => c.id);
+          if (compIds.length > 0) {
+            await tx.comparisonImages.updateMany({
+              where: { comparisonId: { in: compIds } },
+              data: {
+                diffImage: null,
+              },
+            });
           }
+        },
+        {
+          maxWait: 15000,
+          timeout: 30000,
         }
-      });
+      );
 
       return true;
     } catch (err) {
       console.error('Error promoting baseline run in PostgreSQL:', err);
+      throw err;
     }
   }
 
