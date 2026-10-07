@@ -95,12 +95,53 @@ export async function POST(
 
     const existingRun = body.runId ? await getRunById(body.runId, true, true) : null;
 
+    // If in ephemeral mode and replacing previous run, delete non-baseline runs on first step
+    const isFirstStep = Boolean(body.replaceRun && (!existingRun || existingRun.screenshots.length === 0));
+    if (!isCloud && isFirstStep) {
+      await deleteNonBaselineRuns(id);
+    }
+
     const screenshots: Screenshot[] = existingRun ? [...existingRun.screenshots] : [];
     const comparisons: ComparisonItem[] = existingRun ? [...existingRun.comparisons] : [];
 
     let passedChecks = existingRun ? existingRun.passedChecks : 0;
     let changedChecks = existingRun ? existingRun.changedChecks : 0;
     let newChecks = existingRun ? existingRun.newChecks : 0;
+
+    const addScreenshot = (sc: Screenshot) => {
+      const idx = screenshots.findIndex(
+        (s) =>
+          Boolean(s.isComponent) === Boolean(sc.isComponent) &&
+          s.pageId === sc.pageId &&
+          s.breakpointId === sc.breakpointId &&
+          (!sc.isComponent || (s.componentId === sc.componentId && s.componentState === sc.componentState))
+      );
+      if (idx !== -1) {
+        screenshots.splice(idx, 1);
+      }
+      screenshots.push(sc);
+    };
+
+    const addComparison = (cmp: ComparisonItem) => {
+      const idx = comparisons.findIndex(
+        (c) =>
+          Boolean(c.isComponent) === Boolean(cmp.isComponent) &&
+          c.pageId === cmp.pageId &&
+          c.breakpointId === cmp.breakpointId &&
+          (!cmp.isComponent || (c.componentId === cmp.componentId && c.componentState === cmp.componentState))
+      );
+      if (idx !== -1) {
+        const prev = comparisons[idx];
+        if (prev.status === 'identical') passedChecks = Math.max(0, passedChecks - 1);
+        else if (prev.status === 'changed') changedChecks = Math.max(0, changedChecks - 1);
+        else if (prev.status === 'new') newChecks = Math.max(0, newChecks - 1);
+        comparisons.splice(idx, 1);
+      }
+      if (cmp.status === 'identical') passedChecks++;
+      else if (cmp.status === 'changed') changedChecks++;
+      else if (cmp.status === 'new') newChecks++;
+      comparisons.push(cmp);
+    };
 
     for (const page of finalPages) {
       const pagePath = page.path.startsWith('/') ? page.path : `/${page.path}`;
@@ -145,7 +186,7 @@ export async function POST(
             imageData: currentImageUrl,
             capturedAt: new Date().toISOString(),
           };
-          screenshots.push(screenshot);
+          addScreenshot(screenshot);
 
           // 3. Compare against baseline if available
           let baselineImage: string | undefined;
@@ -177,11 +218,6 @@ export async function POST(
               );
 
               const isIdentical = diffResult.isIdentical || diffResult.diffPercentage === 0;
-              if (isIdentical) {
-                passedChecks++;
-              } else {
-                changedChecks++;
-              }
 
               // Only compress and store diff image if there are actual visual changes
               let diffImageUrl: string | undefined;
@@ -197,7 +233,7 @@ export async function POST(
                 });
               }
 
-              comparisons.push({
+              addComparison({
                 id: `cmp_${screenshotId}`,
                 pageId: page.id,
                 pageName: page.name,
@@ -217,7 +253,7 @@ export async function POST(
               });
             } catch (diffErr: unknown) {
               const dErr = diffErr as Error;
-              comparisons.push({
+              addComparison({
                 id: `cmp_${screenshotId}`,
                 pageId: page.id,
                 pageName: page.name,
@@ -238,8 +274,7 @@ export async function POST(
             }
           } else {
             // No baseline yet; this is a new capture
-            newChecks++;
-            comparisons.push({
+            addComparison({
               id: `cmp_${screenshotId}`,
               pageId: page.id,
               pageName: page.name,
@@ -259,7 +294,7 @@ export async function POST(
         } catch (captureErr: unknown) {
           const cErr = captureErr as Error;
           console.error(`Failed to capture ${fullUrl} at ${bp.width}x${bp.height}:`, cErr);
-          comparisons.push({
+          addComparison({
             id: `cmp_err_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
             pageId: page.id,
             pageName: page.name,
@@ -311,7 +346,7 @@ export async function POST(
                 });
 
                 const compScId = `sc_${comp.id}_${stateCap.state}_${bp.id}_${Date.now()}`;
-                screenshots.push({
+                addScreenshot({
                   id: compScId,
                   pageId: page.id,
                   pageName: page.name,
@@ -351,11 +386,6 @@ export async function POST(
                     );
 
                     const isIdentical = diffResult.isIdentical || diffResult.diffPercentage === 0;
-                    if (isIdentical) {
-                      passedChecks++;
-                    } else {
-                      changedChecks++;
-                    }
 
                     let diffImageUrl: string | undefined;
                     if (!isIdentical) {
@@ -370,7 +400,7 @@ export async function POST(
                       });
                     }
 
-                    comparisons.push({
+                    addComparison({
                       id: `cmp_${compScId}`,
                       pageId: page.id,
                       pageName: page.name,
@@ -394,7 +424,7 @@ export async function POST(
                     });
                   } catch (diffErr: unknown) {
                     const dErr = diffErr as Error;
-                    comparisons.push({
+                    addComparison({
                       id: `cmp_${compScId}`,
                       pageId: page.id,
                       pageName: page.name,
@@ -419,8 +449,7 @@ export async function POST(
                   }
                 } else {
                   // New component state check
-                  newChecks++;
-                  comparisons.push({
+                  addComparison({
                     id: `cmp_${compScId}`,
                     pageId: page.id,
                     pageName: page.name,
@@ -445,7 +474,7 @@ export async function POST(
             } catch (compErr: unknown) {
               const err = compErr as Error;
               console.warn(`Failed to capture component "${comp.name}" (${comp.selector}) at ${bp.name}:`, err.message);
-              comparisons.push({
+              addComparison({
                 id: `cmp_err_${comp.id}_${bp.id}_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
                 pageId: page.id,
                 pageName: page.name,
@@ -481,7 +510,7 @@ export async function POST(
     const newRun: Run = {
       id: targetRunId,
       projectId: project.id,
-      createdAt: new Date().toISOString(),
+      createdAt: existingRun?.createdAt || new Date().toISOString(),
       status: 'completed',
       isBaseline: shouldBeBaseline,
       totalChecks,

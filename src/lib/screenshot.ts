@@ -73,6 +73,49 @@ async function captureWithExternalService(options: CaptureOptions): Promise<stri
 }
 
 /**
+ * Fallback to external screenshot service for capturing a specific DOM element.
+ * Uses Microlink API with CSS selector.
+ */
+async function captureComponentWithExternalService(options: {
+  url: string;
+  width: number;
+  height: number;
+  selector: string;
+  state: 'default' | 'hover' | 'active' | 'focus';
+  waitTimeMs?: number;
+}): Promise<ComponentCaptureResult> {
+  const { url, width, height, selector, state, waitTimeMs = 1000 } = options;
+  const targetUrl = encodeURIComponent(url);
+  const targetElement = encodeURIComponent(selector);
+
+  const apiUrl = `https://api.microlink.io?url=${targetUrl}&screenshot=true&element=${targetElement}&meta=false&viewport.width=${width}&viewport.height=${height}&viewport.deviceScaleFactor=1&waitForTimeout=${waitTimeMs}`;
+
+  const res = await fetch(apiUrl, {
+    headers: { 'User-Agent': 'VisualAnalizar/1.0' },
+  });
+
+  if (!res.ok) {
+    throw new Error(`External service element capture failed (status ${res.status}) for "${selector}"`);
+  }
+
+  const json = await res.json();
+  const screenshotUrl = json.data?.screenshot?.url;
+  if (!screenshotUrl) {
+    throw new Error(`Element screenshot URL not returned for "${selector}"`);
+  }
+
+  const imageRes = await fetch(screenshotUrl);
+  const arrayBuffer = await imageRes.arrayBuffer();
+  const base64 = Buffer.from(arrayBuffer).toString('base64');
+  return {
+    state,
+    imageData: `data:image/png;base64,${base64}`,
+    width: json.data?.screenshot?.width || width,
+    height: json.data?.screenshot?.height || height,
+  };
+}
+
+/**
  * Launches Puppeteer either using @sparticuz/chromium (Vercel / Lambda)
  * or local Chrome executable (Mac / Linux / Windows).
  */
@@ -148,8 +191,8 @@ export async function captureScreenshot(options: CaptureOptions): Promise<string
     });
 
     await page.goto(url, {
-      waitUntil: 'networkidle2',
-      timeout: 30000,
+      waitUntil: 'domcontentloaded',
+      timeout: 12000,
     });
 
     // Suppress scrollbars to ensure exactly identical layout width across all captures
@@ -166,7 +209,7 @@ export async function captureScreenshot(options: CaptureOptions): Promise<string
     }
 
     if (waitTimeMs > 0) {
-      await new Promise((resolve) => setTimeout(resolve, waitTimeMs));
+      await new Promise((resolve) => setTimeout(resolve, Math.min(waitTimeMs, 2000)));
     }
 
     const screenshotBuffer = await page.screenshot({
@@ -241,8 +284,8 @@ export async function captureMultipleComponentStates(options: {
     });
 
     await page.goto(url, {
-      waitUntil: 'networkidle2',
-      timeout: 30000,
+      waitUntil: 'domcontentloaded',
+      timeout: 12000,
     });
 
     // Suppress scrollbars
@@ -254,7 +297,7 @@ export async function captureMultipleComponentStates(options: {
     }).catch(() => {});
 
     if (waitTimeMs > 0) {
-      await new Promise((resolve) => setTimeout(resolve, waitTimeMs));
+      await new Promise((resolve) => setTimeout(resolve, Math.min(waitTimeMs, 2000)));
     }
 
     // Wait for the target element to be present in DOM (fail fast if hidden on mobile/tablet)
@@ -270,7 +313,7 @@ export async function captureMultipleComponentStates(options: {
     }).catch(() => {});
 
     // Ensure transitions and reflow have stabilized
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 250));
 
     // Get element dimensions
     const box = await element.boundingBox();
@@ -341,7 +384,31 @@ export async function captureMultipleComponentStates(options: {
       }
     }
 
-    return results;
+    if (results.length > 0) {
+      return results;
+    }
+    throw new Error(`Puppeteer produced no valid state captures for "${selector}"`);
+  } catch (err: unknown) {
+    const error = err as Error;
+    console.warn(`[VisualAnalizar] Puppeteer component capture failed (${error.message}). Attempting external fallback for "${selector}"...`);
+    try {
+      const fallbackResults: ComponentCaptureResult[] = [];
+      for (const st of states) {
+        const item = await captureComponentWithExternalService({
+          url,
+          width,
+          height,
+          selector,
+          state: st,
+          waitTimeMs,
+        });
+        fallbackResults.push(item);
+      }
+      return fallbackResults;
+    } catch (fbErr: unknown) {
+      const fErr = fbErr as Error;
+      throw new Error(`Failed to capture component "${selector}" via Puppeteer or fallback service: ${error.message} | ${fErr.message}`);
+    }
   } finally {
     if (browser) {
       try {

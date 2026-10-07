@@ -2,7 +2,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ['@sparticuz/chromium', 'puppeteer-core', 'sharp'],
-  // Enable large image payload transfers in API routes if needed
+  outputFileTracingIncludes: {
+    '/api/**/*': ['./node_modules/@sparticuz/chromium/bin/**/*'],
+  },
   experimental: {},
 };
 

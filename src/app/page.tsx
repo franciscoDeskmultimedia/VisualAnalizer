@@ -196,24 +196,57 @@ export default function HomePage() {
 
     try {
       const pages = activeProject.pages;
-      for (let i = 0; i < pages.length; i++) {
-        const page = pages[i];
-        setProgressStep(`Checking page ${i + 1} of ${pages.length}: ${page.name} (${page.path})...`);
+      const breakpoints = activeProject.breakpoints && activeProject.breakpoints.length > 0
+        ? activeProject.breakpoints
+        : [{ id: 'desktop', name: 'Desktop', width: 1280, height: 800 }];
 
-        const res = await fetch(`/api/projects/${activeProject.id}/runs`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            runId,
-            pageIds: [page.id],
-            pagePaths: [page.path],
-            replaceRun: Boolean(replaceRun),
-          }),
-        });
+      const totalSteps = pages.length * breakpoints.length;
+      let currentStep = 0;
 
-        const data = await res.json();
-        if (!res.ok || !data.success) {
-          throw new Error(data.error || `Failed on page ${page.name}`);
+      for (let pIdx = 0; pIdx < pages.length; pIdx++) {
+        const page = pages[pIdx];
+        for (let bIdx = 0; bIdx < breakpoints.length; bIdx++) {
+          const bp = breakpoints[bIdx];
+          currentStep++;
+          setProgressStep(
+            `Checking ${page.name} — ${bp.name} (${bp.width}x${bp.height}) [${currentStep}/${totalSteps}]...`
+          );
+
+          const res = await fetch(`/api/projects/${activeProject.id}/runs`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              runId,
+              pageIds: [page.id],
+              pagePaths: [page.path],
+              breakpointIds: [bp.id],
+              replaceRun: Boolean(replaceRun && pIdx === 0 && bIdx === 0),
+            }),
+          });
+
+          let data: any = null;
+          const contentType = res.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            data = await res.json().catch(() => null);
+          } else {
+            const rawText = await res.text().catch(() => '');
+            if (!res.ok) {
+              if (res.status === 504 || rawText.includes('FUNCTION_INVOCATION_TIMEOUT') || rawText.includes('timed out')) {
+                throw new Error(
+                  `Server timeout on ${page.name} (${bp.name}). The serverless execution duration was exceeded.`
+                );
+              }
+              throw new Error(
+                `Server returned HTTP ${res.status}: ${rawText.slice(0, 160) || res.statusText}`
+              );
+            }
+          }
+
+          if (!res.ok || !data || !data.success) {
+            throw new Error(
+              data?.error || `Failed on page ${page.name} (${bp.name}) - Status: ${res.status}`
+            );
+          }
         }
       }
 
